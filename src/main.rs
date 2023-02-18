@@ -229,46 +229,46 @@ mod my_lib {
         fn swap(&mut self, p1: S, p2: S);
     }
 
-    impl<T> Mat<&Point, T> for Vec<Vec<T>>
+    impl<T> Mat<&Pos, T> for Vec<Vec<T>>
     where
         T: Copy,
     {
-        fn set(&mut self, p: &Point, value: T) {
+        fn set(&mut self, p: &Pos, value: T) {
             self[p.y][p.x] = value;
         }
 
-        fn get(&self, p: &Point) -> T {
+        fn get(&self, p: &Pos) -> T {
             self[p.y][p.x]
         }
 
-        fn swap(&mut self, p1: &Point, p2: &Point) {
+        fn swap(&mut self, p1: &Pos, p2: &Pos) {
             let tmp = self[p1.y][p1.x];
             self[p1.y][p1.x] = self[p2.y][p2.x];
             self[p2.y][p2.x] = tmp;
         }
     }
 
-    impl<T> Mat<Point, T> for Vec<Vec<T>>
+    impl<T> Mat<Pos, T> for Vec<Vec<T>>
     where
         T: Copy,
     {
-        fn set(&mut self, p: Point, value: T) {
+        fn set(&mut self, p: Pos, value: T) {
             self[p.y][p.x] = value;
         }
 
-        fn get(&self, p: Point) -> T {
+        fn get(&self, p: Pos) -> T {
             self[p.y][p.x]
         }
 
-        fn swap(&mut self, p1: Point, p2: Point) {
+        fn swap(&mut self, p1: Pos, p2: Pos) {
             let tmp = self[p1.y][p1.x];
             self[p1.y][p1.x] = self[p2.y][p2.x];
             self[p2.y][p2.x] = tmp;
         }
     }
 
-    impl Add for Point {
-        type Output = Result<Point, &'static str>;
+    impl Add for Pos {
+        type Output = Result<Pos, &'static str>;
         fn add(self, rhs: Self) -> Self::Output {
             let (x, y) = if cfg!(debug_assertions) {
                 // debugではオーバーフローでpanic発生するため、オーバーフローの溢れを明確に無視する(※1.60場合。それ以外は不明)
@@ -285,21 +285,21 @@ mod my_lib {
                 }
             }
 
-            Ok(Point { x, y })
+            Ok(Pos { x, y })
         }
     }
 
     static mut WIDTH: Option<usize> = None;
 
     #[derive(Debug, Clone, PartialEq, Eq, Copy)]
-    pub struct Point {
+    pub struct Pos {
         pub x: usize, // →
         pub y: usize, // ↑
     }
 
-    impl Point {
+    impl Pos {
         pub fn new(x: usize, y: usize) -> Self {
-            Point { x, y }
+            Pos { x, y }
         }
 
         pub fn set_width(width: usize) {
