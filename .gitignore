@@ -1,0 +1,7 @@
+/target
+*.txt
+/experiment/venv
+mlruns
+*.ini
+*.pyc
+*.exe
