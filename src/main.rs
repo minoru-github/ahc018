@@ -26,23 +26,49 @@ fn main() {
     eprintln!("{:?} ", duration);
 }
 
-#[derive(Debug, Clone)]
-pub struct State {
-    score: usize,
+enum Response {
+    NotBroken,
+    Broken,
+    Finish,
+    Invalid,
 }
 
-impl State {
-    fn new() -> Self {
-        State { score: 0 }
+#[derive(Debug, Clone)]
+struct Field {
+    n: usize,
+    c: usize,
+    is_broken: Vec<Vec<bool>>,
+    total_cost: usize,
+}
+
+impl Field {
+    fn new(n: usize, c: usize) -> Self {
+        let is_broken = vec![vec![false; n]; n];
+        Field {
+            n,
+            c,
+            is_broken,
+            total_cost: 0,
+        }
     }
 
-    fn change(&mut self, output: &mut Output, rng: &mut Mcg128Xsl64) {
-        //let val = rng.gen_range(-3, 4);
-        //self.x += val;
-    }
+    fn query(&mut self, pos: &Pos, power: usize) -> Response {
+        self.total_cost += power + self.c;
+        println!("{} {} {}", pos.y, pos.x, power);
 
-    fn compute_score(&mut self) {
-        //self.score = 0;
+        let r = read_u();
+        match r {
+            0 => Response::NotBroken,
+            1 => {
+                self.is_broken[pos.y][pos.x] = true;
+                Response::Broken
+            }
+            2 => {
+                self.is_broken[pos.y][pos.x] = true;
+                Response::Finish
+            }
+            _ => Response::Invalid,
+        }
     }
 }
 
@@ -58,62 +84,68 @@ impl Sim {
         Sim { input }
     }
 
-    pub fn run(&mut self) {
-        let mut rng: Mcg128Xsl64 = rand_pcg::Pcg64Mcg::new(890482);
-        let mut cnt = 0 as usize; // 試行回数
+    pub fn run(&mut self) {}
 
-        //let mut initial_state = State::new();
-        let mut best_output = Output::new();
-        let mut best_state = State::new();
-        best_state.compute_score();
+    fn move_next(&self, start: Pos, next: Pos) {
+        println!(
+            "# move from ({}, {}) to ({}, {})",
+            start.y, start.x, next.y, next.x
+        );
+    }
 
-        'outer: loop {
-            let current_time = my_lib::time::update();
-            if current_time >= my_lib::time::LIMIT {
-                break;
-            }
-
-            cnt += 1;
-
-            let mut output = Output::new();
-
-            // A:近傍探索
-            let mut state: State = best_state.clone();
-            state.change(&mut output, &mut rng);
-
-            // B:壊して再構築
-            // best_outputの一部を破壊して、それまでのoutputを使ってstateを作り直して再構築したり
-            // outputの変形
-            // best_output.remove(&mut output, &mut rng);
-            // let mut state: State = initial_state.clone();
-            // stateを新outputの情報で復元
-            // そこから続きやる
-
-            // スコア計算
-            state.compute_score();
-
-            // 状態更新
-            solver::mountain(&mut best_state, &state, &mut best_output, &output);
-            //solver::simulated_annealing(&mut best_state, &state, &mut best_output, &output, self.current_time, &mut rng);
+    fn excavate(&self, field: &mut Field, pos: &Pos, power: usize) {
+        if field.is_broken[pos.y][pos.x] {
+            panic!("this pos has already been broken");
         }
-
-        best_output.submit();
-
-        eprintln!("{} ", cnt);
-        eprintln!("{} ", best_state.score);
+        let result = field.query(pos, power);
+        match result {
+            Response::Finish => {
+                eprintln!("total cost {} ", field.total_cost);
+            }
+            Response::Invalid => {
+                panic!("invalid: {:?}", pos);
+            }
+            _ => {}
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Input {
     n: usize,
+    w: usize,
+    k: usize,
+    c: usize,
+    source_vec: Vec<(Pos)>,
+    house_vec: Vec<(Pos)>,
 }
 
 impl Input {
     fn read() -> Self {
-        let n = read_u();
+        let (n, w, k, c) = read_uuuu();
 
-        Input { n }
+        let mut source_vec = vec![];
+        for _ in 0..w {
+            let (y, x) = read_uu();
+            let pos = Pos::new(y, x);
+            source_vec.push(pos);
+        }
+
+        let mut house_vec = vec![];
+        for _ in 0..k {
+            let (y, x) = read_uu();
+            let pos = Pos::new(y, x);
+            house_vec.push(pos);
+        }
+
+        Input {
+            n,
+            w,
+            k,
+            c,
+            source_vec,
+            house_vec,
+        }
     }
 }
 
@@ -138,62 +170,6 @@ impl Output {
 
 mod solver {
     use super::*;
-
-    pub fn mountain(
-        best_state: &mut State,
-        state: &State,
-        best_output: &mut Output,
-        output: &Output,
-    ) {
-        //! bese_state(self)を更新する。
-
-        // 最小化の場合は > , 最大化の場合は < 。
-        if best_state.score > state.score {
-            *best_state = state.clone();
-            *best_output = output.clone();
-        }
-    }
-
-    const T0: f64 = 2e3;
-    //const T1: f64 = 6e2; // 終端温度が高いと最後まで悪いスコアを許容する
-    const T1: f64 = 6e1; // 終端温度が高いと最後まで悪いスコアを許容する
-    pub fn simulated_annealing(
-        best_state: &mut State,
-        state: &State,
-        best_output: &mut Output,
-        output: &Output,
-        current_time: f64,
-        rng: &mut Mcg128Xsl64,
-    ) {
-        //! 焼きなまし法
-        //! https://scrapbox.io/minyorupgc/%E7%84%BC%E3%81%8D%E3%81%AA%E3%81%BE%E3%81%97%E6%B3%95
-
-        static mut T: f64 = T0;
-        static mut CNT: usize = 0;
-        let temperature = unsafe {
-            CNT += 1;
-            if CNT % 100 == 0 {
-                let t = current_time / my_lib::time::LIMIT;
-                T = T0.powf(1.0 - t) * T1.powf(t);
-            }
-            T
-        };
-
-        // 最大化の場合
-        let delta = (best_state.score as f64) - (state.score as f64);
-        // 最小化の場合
-        //let delta = (state.score as f64) - (best_state.score as f64);
-
-        let prob = f64::exp(-delta / temperature).min(1.0);
-
-        if delta < 0.0 {
-            *best_state = state.clone();
-            *best_output = output.clone();
-        } else if rng.gen_bool(prob) {
-            *best_state = state.clone();
-            *best_output = output.clone();
-        }
-    }
 }
 
 mod my_lib {
@@ -223,83 +199,17 @@ mod my_lib {
         pub const LIMIT: f64 = 0.3;
     }
 
-    pub trait Mat<S, T> {
-        fn set(&mut self, p: S, value: T);
-        fn get(&self, p: S) -> T;
-        fn swap(&mut self, p1: S, p2: S);
-    }
-
-    impl<T> Mat<&Pos, T> for Vec<Vec<T>>
-    where
-        T: Copy,
-    {
-        fn set(&mut self, p: &Pos, value: T) {
-            self[p.y][p.x] = value;
-        }
-
-        fn get(&self, p: &Pos) -> T {
-            self[p.y][p.x]
-        }
-
-        fn swap(&mut self, p1: &Pos, p2: &Pos) {
-            let tmp = self[p1.y][p1.x];
-            self[p1.y][p1.x] = self[p2.y][p2.x];
-            self[p2.y][p2.x] = tmp;
-        }
-    }
-
-    impl<T> Mat<Pos, T> for Vec<Vec<T>>
-    where
-        T: Copy,
-    {
-        fn set(&mut self, p: Pos, value: T) {
-            self[p.y][p.x] = value;
-        }
-
-        fn get(&self, p: Pos) -> T {
-            self[p.y][p.x]
-        }
-
-        fn swap(&mut self, p1: Pos, p2: Pos) {
-            let tmp = self[p1.y][p1.x];
-            self[p1.y][p1.x] = self[p2.y][p2.x];
-            self[p2.y][p2.x] = tmp;
-        }
-    }
-
-    impl Add for Pos {
-        type Output = Result<Pos, &'static str>;
-        fn add(self, rhs: Self) -> Self::Output {
-            let (x, y) = if cfg!(debug_assertions) {
-                // debugではオーバーフローでpanic発生するため、オーバーフローの溢れを明確に無視する(※1.60場合。それ以外は不明)
-                (self.x.wrapping_add(rhs.x), self.y.wrapping_add(rhs.y))
-            } else {
-                (self.x + rhs.x, self.y + rhs.y)
-            };
-
-            unsafe {
-                if let Some(width) = WIDTH {
-                    if x >= width || y >= width {
-                        return Err("out of range");
-                    }
-                }
-            }
-
-            Ok(Pos { x, y })
-        }
-    }
-
     static mut WIDTH: Option<usize> = None;
 
     #[derive(Debug, Clone, PartialEq, Eq, Copy)]
     pub struct Pos {
+        pub y: usize, // ↓
         pub x: usize, // →
-        pub y: usize, // ↑
     }
 
     impl Pos {
-        pub fn new(x: usize, y: usize) -> Self {
-            Pos { x, y }
+        pub fn new(y: usize, x: usize) -> Self {
+            Pos { y, x }
         }
 
         pub fn set_width(width: usize) {
