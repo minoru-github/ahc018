@@ -16,6 +16,8 @@ use std::{
     slice::SliceIndex,
 };
 
+const IS_LOCAL: bool = true;
+
 fn main() {
     let start_time = my_lib::time::update();
 
@@ -26,6 +28,7 @@ fn main() {
     eprintln!("{:?} ", duration);
 }
 
+#[derive(Debug, Clone)]
 enum Response {
     NotBroken,
     Broken,
@@ -62,23 +65,40 @@ impl Field {
             panic!("this pos has already been broken");
         }
         self.total_cost += power + self.c;
-        println!("{} {} {}", pos.y, pos.x, power);
+        //TODO
+        //println!("{} {} {}", pos.y, pos.x, power);
 
-        let r = read_u();
-        match r {
-            0 => Response::NotBroken,
-            1 => {
-                self.is_broken[pos.y][pos.x] = true;
-                Response::Broken
+        if IS_LOCAL {
+            unsafe {
+                let remained_toughness = TOUGHNESS[pos.y][pos.x];
+                let mut responce = Response::Invalid;
+                if power >= remained_toughness {
+                    TOUGHNESS[pos.y][pos.x] = 0;
+                    self.is_broken[pos.y][pos.x] = true;
+                    responce = Response::Broken;
+                } else {
+                    TOUGHNESS[pos.y][pos.x] -= power;
+                    responce = Response::NotBroken;
+                }
+                responce
             }
-            2 => {
-                self.is_broken[pos.y][pos.x] = true;
-                eprintln!("total cost {} ", self.total_cost);
-                Response::Finish
-            }
-            _ => {
-                panic!("invalid: {:?}", pos);
-                Response::Invalid
+        } else {
+            let r = read_u();
+            match r {
+                0 => Response::NotBroken,
+                1 => {
+                    self.is_broken[pos.y][pos.x] = true;
+                    Response::Broken
+                }
+                2 => {
+                    self.is_broken[pos.y][pos.x] = true;
+                    eprintln!("total cost {} ", self.total_cost);
+                    Response::Finish
+                }
+                _ => {
+                    panic!("invalid: {:?}", pos);
+                    Response::Invalid
+                }
             }
         }
     }
@@ -87,6 +107,54 @@ impl Field {
     const ESTIMATER_CENTER: usize = Field::ESTIMATER_UNIT * 3;
     const ESTIMATER_WIDTH: usize = Field::ESTIMATER_CENTER * 2 - Field::ESTIMATER_UNIT;
     const ESTIMATER_RADIUS: usize = Field::ESTIMATER_CENTER - Field::ESTIMATER_UNIT;
+    fn estimate_representative_points(&mut self) {
+        let mut power = 100;
+
+        while power <= 5000 {
+            for q in 0..(Field::WIDTH / Field::ESTIMATER_WIDTH) {
+                let y = Field::ESTIMATER_WIDTH * q + Field::ESTIMATER_CENTER;
+                for p in 0..(Field::WIDTH / Field::ESTIMATER_WIDTH) {
+                    let x = Field::ESTIMATER_WIDTH * p + Field::ESTIMATER_CENTER;
+                    eprintln!("q:{:?} p:{}", q, p);
+                    eprintln!("y:{:?} x:{}", y, x);
+                    eprintln!("{:?} ", self.is_broken[y][x]);
+                    if self.is_broken[y][x] {
+                        continue;
+                    }
+
+                    let pos = &Pos::new(y, x);
+
+                    // 掘削
+                    let responce = self.excavate(pos, power);
+                    eprintln!("{:?} ", responce);
+                    match responce {
+                        Response::Broken => {
+                            // 壊れたら周りを推定
+                            self.estimate_around(pos, power);
+                        }
+                        Response::NotBroken => {}
+                        Response::Finish => {}
+                        Response::Invalid => {}
+                    }
+                }
+            }
+            power *= 2;
+        }
+    }
+
+    fn output_estimated_toughness(&self) {
+        for y in 0..self.n {
+            for x in 0..self.n {
+                if let Some(est_tough) = self.estimated_toughness[y][x] {
+                    print!("{:>04} ", est_tough.0);
+                } else {
+                    print!("{} ", 5555);
+                }
+            }
+            println!("");
+        }
+    }
+
     fn estimate_around(&mut self, pos: &Pos, power: usize) {
         let check_range = |val: usize, cnt: usize| {
             let val = val as i32 - Field::ESTIMATER_CENTER as i32 + cnt as i32;
@@ -124,6 +192,8 @@ impl Field {
     }
 }
 
+static mut TOUGHNESS: Vec<Vec<usize>> = vec![];
+
 #[derive(Debug, Clone)]
 pub struct Sim {
     input: Input,
@@ -131,12 +201,15 @@ pub struct Sim {
 
 impl Sim {
     fn new() -> Self {
-        // TODO: impl input
         let input = Input::read();
         Sim { input }
     }
 
-    pub fn run(&mut self) {}
+    pub fn run(&mut self) {
+        let mut field = Field::new(self.input.n, self.input.c);
+        field.estimate_representative_points();
+        field.output_estimated_toughness();
+    }
 
     fn move_next(&self, start: Pos, next: Pos) {
         println!(
@@ -144,6 +217,8 @@ impl Sim {
             start.y, start.x, next.y, next.x
         );
     }
+
+    fn get_toughness() {}
 }
 
 #[derive(Debug, Clone)]
@@ -154,11 +229,23 @@ pub struct Input {
     c: usize,
     source_vec: Vec<(Pos)>,
     house_vec: Vec<(Pos)>,
+    toughness: Vec<Vec<usize>>,
 }
 
 impl Input {
     fn read() -> Self {
         let (n, w, k, c) = read_uuuu();
+
+        let mut toughness = vec![];
+        if IS_LOCAL {
+            for y in 0..n {
+                let vec: Vec<usize> = read_vec();
+                toughness.push(vec);
+            }
+            unsafe {
+                TOUGHNESS = toughness.clone();
+            }
+        }
 
         let mut source_vec = vec![];
         for _ in 0..w {
@@ -181,6 +268,7 @@ impl Input {
             c,
             source_vec,
             house_vec,
+            toughness,
         }
     }
 }
