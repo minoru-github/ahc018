@@ -103,21 +103,21 @@ impl Field {
         }
     }
 
-    const ESTIMATER_UNIT: usize = 10;
+    const ESTIMATER_UNIT: usize = 1;
     const ESTIMATER_CENTER: usize = Field::ESTIMATER_UNIT * 3;
     const ESTIMATER_WIDTH: usize = Field::ESTIMATER_CENTER * 2 - Field::ESTIMATER_UNIT;
-    const ESTIMATER_RADIUS: usize = Field::ESTIMATER_CENTER - Field::ESTIMATER_UNIT;
+    const ESTIMATER_RADIUS: usize = Field::ESTIMATER_WIDTH - Field::ESTIMATER_UNIT;
+    const MAX_POWER: usize = 800;
     fn estimate_representative_points(&mut self) {
         let mut power = 100;
 
-        while power <= 5000 {
+        let mut cnt = 0;
+        let mut total_power = 0;
+        while power <= Field::MAX_POWER {
             for q in 0..(Field::WIDTH / Field::ESTIMATER_WIDTH) {
                 let y = Field::ESTIMATER_WIDTH * q + Field::ESTIMATER_CENTER;
                 for p in 0..(Field::WIDTH / Field::ESTIMATER_WIDTH) {
                     let x = Field::ESTIMATER_WIDTH * p + Field::ESTIMATER_CENTER;
-                    eprintln!("q:{:?} p:{}", q, p);
-                    eprintln!("y:{:?} x:{}", y, x);
-                    eprintln!("{:?} ", self.is_broken[y][x]);
                     if self.is_broken[y][x] {
                         continue;
                     }
@@ -126,20 +126,22 @@ impl Field {
 
                     // 掘削
                     let responce = self.excavate(pos, power);
-                    eprintln!("{:?} ", responce);
                     match responce {
                         Response::Broken => {
                             // 壊れたら周りを推定
                             self.estimate_around(pos, power);
+                            total_power += power;
                         }
                         Response::NotBroken => {}
                         Response::Finish => {}
                         Response::Invalid => {}
                     }
+                    cnt += 1;
                 }
             }
             power *= 2;
         }
+        eprintln!("cnt: {:?} total_power:{}", cnt, total_power);
     }
 
     fn output_estimated_toughness(&self) {
