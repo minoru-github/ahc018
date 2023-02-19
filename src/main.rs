@@ -39,20 +39,28 @@ struct Field {
     c: usize,
     is_broken: Vec<Vec<bool>>,
     total_cost: usize,
+    estimated_toughness: Vec<Vec<Option<(usize, f32)>>>,
 }
 
 impl Field {
+    const WIDTH: usize = 200;
     fn new(n: usize, c: usize) -> Self {
         let is_broken = vec![vec![false; n]; n];
+        let estimated_toughness = vec![vec![None; n]; n];
+
         Field {
             n,
             c,
             is_broken,
             total_cost: 0,
+            estimated_toughness,
         }
     }
 
-    fn query(&mut self, pos: &Pos, power: usize) -> Response {
+    fn excavate(&mut self, pos: &Pos, power: usize) -> Response {
+        if self.is_broken[pos.y][pos.x] {
+            panic!("this pos has already been broken");
+        }
         self.total_cost += power + self.c;
         println!("{} {} {}", pos.y, pos.x, power);
 
@@ -65,9 +73,53 @@ impl Field {
             }
             2 => {
                 self.is_broken[pos.y][pos.x] = true;
+                eprintln!("total cost {} ", self.total_cost);
                 Response::Finish
             }
-            _ => Response::Invalid,
+            _ => {
+                panic!("invalid: {:?}", pos);
+                Response::Invalid
+            }
+        }
+    }
+
+    const ESTIMATER_UNIT: usize = 10;
+    const ESTIMATER_CENTER: usize = Field::ESTIMATER_UNIT * 3;
+    const ESTIMATER_WIDTH: usize = Field::ESTIMATER_CENTER * 2 - Field::ESTIMATER_UNIT;
+    const ESTIMATER_RADIUS: usize = Field::ESTIMATER_CENTER - Field::ESTIMATER_UNIT;
+    fn estimate_around(&mut self, pos: &Pos, power: usize) {
+        let check_range = |val: usize, cnt: usize| {
+            let val = val as i32 - Field::ESTIMATER_CENTER as i32 + cnt as i32;
+            if val < 0 || Field::WIDTH as i32 <= val {
+                Err(())
+            } else {
+                Ok(val as usize)
+            }
+        };
+
+        for j in 0..Field::ESTIMATER_WIDTH {
+            let res = check_range(pos.y, j);
+            if res.is_err() {
+                continue;
+            }
+            let y = res.ok().unwrap();
+
+            for i in 0..Field::ESTIMATER_WIDTH {
+                let res = check_range(pos.x, i);
+                if res.is_err() {
+                    continue;
+                }
+                let x = res.ok().unwrap();
+
+                let dx = (x as i32 - i as i32).abs();
+                let dy = (y as i32 - j as i32).abs();
+                let dist = (dx + dy) as f32;
+                let max_dist = (Field::ESTIMATER_RADIUS * 2) as f32;
+                let prob = (max_dist) / (dist + max_dist).min(1.0);
+
+                let estimated_toughness = (power, prob);
+                self.estimated_toughness[y][x] = Some(estimated_toughness);
+            }
         }
     }
 }
@@ -91,22 +143,6 @@ impl Sim {
             "# move from ({}, {}) to ({}, {})",
             start.y, start.x, next.y, next.x
         );
-    }
-
-    fn excavate(&self, field: &mut Field, pos: &Pos, power: usize) {
-        if field.is_broken[pos.y][pos.x] {
-            panic!("this pos has already been broken");
-        }
-        let result = field.query(pos, power);
-        match result {
-            Response::Finish => {
-                eprintln!("total cost {} ", field.total_cost);
-            }
-            Response::Invalid => {
-                panic!("invalid: {:?}", pos);
-            }
-            _ => {}
-        }
     }
 }
 
