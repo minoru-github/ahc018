@@ -115,8 +115,9 @@ impl Field {
     const ESTIMATER_BLOCK_RADIUS: usize =
         Field::ESTIMATER_BLOCK_CENTER * 2 - Field::ESTIMATER_BLOCK_UNIT;
     const MAX_POWER: usize = 800;
+    const INITIAL_POWER: usize = 100;
     fn estimate_representative_points_around(&mut self) {
-        let mut power = 100;
+        let mut power = INITIAL_POWER;
 
         let mut cnt = 0;
         let mut total_power = 0;
