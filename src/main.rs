@@ -268,6 +268,130 @@ impl Field {
             }
         }
     }
+
+    fn sort_houses_by_manhattan_dist(
+        &self,
+        source_vec: &Vec<Pos>,
+        house_vec: &Vec<Pos>,
+    ) -> Vec<Pos> {
+        let mut sorted_house_vec = vec![];
+        for house in house_vec {
+            let manhattan_dist = self.compute_manhattan_dist(source_vec, house);
+            sorted_house_vec.push((manhattan_dist, *house));
+        }
+        sorted_house_vec.sort();
+        sorted_house_vec.iter().map(|(_, b)| *b).collect_vec()
+    }
+
+    fn compute_manhattan_dist(&self, source_vec: &Vec<Pos>, house: &Pos) -> usize {
+        let inf = Field::WIDTH * 10;
+        let mut min_manhattan_dist = inf;
+        for source in source_vec {
+            let dx = (source.x as i32 - house.x as i32).abs();
+            let dy = (source.y as i32 - house.y as i32).abs();
+            let dist = (dx + dy) as usize;
+            min_manhattan_dist = min_manhattan_dist.min(dist);
+        }
+        min_manhattan_dist
+    }
+
+    fn connect_water_path(&self, source_vec: &Vec<Pos>, house_vec: &Vec<Pos>) {
+        // 水路を含め、水があるところ
+        let mut water_set = BTreeSet::new();
+        source_vec.iter().for_each(|pos| {
+            water_set.insert((pos.y, pos.x));
+        });
+
+        let sorted_house_vec = self.sort_houses_by_manhattan_dist(source_vec, house_vec);
+        for house in sorted_house_vec {
+            let path = self.search_path_to_water(&house, &water_set);
+            for pos in path {
+                water_set.insert((pos.y, pos.x));
+            }
+        }
+    }
+
+    fn search_path_to_water(&self, house: &Pos, water_set: &BTreeSet<(usize, usize)>) -> Vec<Pos> {
+        let (dist, parent) = self.dijkstra(house);
+
+        let inf = Field::WIDTH * 10;
+        let mut min_dist = inf;
+        let mut water_pos = None;
+        for &(y, x) in water_set {
+            if min_dist > dist[y][x] {
+                min_dist = dist[y][x];
+                water_pos = Some(Pos::new(y, x));
+            }
+        }
+
+        if water_pos.is_none() {
+            panic!("can't search path to water");
+        }
+
+        let water_pos = water_pos.unwrap();
+
+        let mut path = vec![];
+        let mut cur = Pos::new(water_pos.y, water_pos.x);
+        while let Some(from) = parent[cur.y][cur.x] {
+            path.push(from);
+            cur = from;
+        }
+        path.reverse();
+
+        path
+    }
+
+    fn dijkstra(&self, house: &Pos) -> (Vec<Vec<usize>>, Vec<Vec<Option<Pos>>>) {
+        let is_out_range = |val: i32| -> bool {
+            if val < 0 || Field::WIDTH as i32 <= val {
+                true
+            } else {
+                false
+            }
+        };
+
+        let dy = vec![1, -1, 0, 0];
+        let dx = vec![0, 0, 1, -1];
+
+        let inf = Field::WIDTH * 10;
+        let mut dist = vec![vec![inf; self.n]; self.n];
+        let mut parent: Vec<Vec<Option<Pos>>> = vec![vec![None; self.n]; self.n];
+
+        let mut heap: BinaryHeap<(i32, (usize, usize))> = BinaryHeap::new();
+        heap.push((0, (house.y, house.x)));
+
+        while let Some((d, (y, x))) = heap.pop() {
+            let d = (-d) as usize;
+            if dist[y][x] < d {
+                continue;
+            }
+            dist[y][x] = d;
+
+            for i in 0..4 {
+                let ny = y as i32 + dy[i];
+                let nx = x as i32 + dx[i];
+                if is_out_range(ny) || is_out_range(nx) {
+                    continue;
+                }
+                let ny = ny as usize;
+                let nx = nx as usize;
+
+                let tough = if let Some((tough, _)) = self.estimated_toughness[ny][nx] {
+                    tough
+                } else {
+                    5000
+                };
+
+                if dist[ny][nx] > d + tough {
+                    dist[ny][nx] = d + tough;
+                    heap.push((-1 * dist[ny][nx] as i32, (ny, nx)));
+                    parent[ny][nx] = Some(Pos::new(ny, nx));
+                }
+            }
+        }
+
+        (dist, parent)
+    }
 }
 
 static mut TOUGHNESS: Vec<Vec<usize>> = vec![];
@@ -405,7 +529,7 @@ mod my_lib {
 
     static mut WIDTH: Option<usize> = None;
 
-    #[derive(Debug, Clone, PartialEq, Eq, Copy)]
+    #[derive(Debug, Clone, PartialEq, Eq, Copy, PartialOrd, Ord)]
     pub struct Pos {
         pub y: usize, // ↓
         pub x: usize, // →
