@@ -477,25 +477,6 @@ impl Input {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Output {
-    //score: usize,
-}
-
-impl Output {
-    fn new() -> Self {
-        Output {}
-    }
-
-    fn remove(&self, output: &mut Self, rng: &mut Mcg128Xsl64) {
-        // https://atcoder.jp/contests/ahc014/submissions/35567589 L558
-    }
-
-    fn submit(&self) {
-        //println!("{}", );
-    }
-}
-
 mod solver {
     use super::*;
 }
