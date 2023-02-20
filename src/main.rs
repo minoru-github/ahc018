@@ -43,6 +43,7 @@ struct Field {
     is_broken: Vec<Vec<bool>>,
     total_cost: usize,
     estimated_toughness: Vec<Vec<Option<(usize, f32)>>>,
+    est_tough_cands: Vec<Vec<Vec<(usize, f32)>>>,
 }
 
 impl Field {
@@ -50,6 +51,7 @@ impl Field {
     fn new(n: usize, c: usize) -> Self {
         let is_broken = vec![vec![false; n]; n];
         let estimated_toughness = vec![vec![None; n]; n];
+        let est_tough_cands = vec![vec![vec![]; n]; n];
 
         Field {
             n,
@@ -57,6 +59,7 @@ impl Field {
             is_broken,
             total_cost: 0,
             estimated_toughness,
+            est_tough_cands,
         }
     }
 
@@ -103,24 +106,30 @@ impl Field {
         }
     }
 
-    const ESTIMATER_UNIT: usize = 1;
-    const ESTIMATER_CENTER: usize = Field::ESTIMATER_UNIT * 3;
-    const ESTIMATER_WIDTH: usize = Field::ESTIMATER_CENTER * 2 - Field::ESTIMATER_UNIT;
-    const ESTIMATER_RADIUS: usize = Field::ESTIMATER_WIDTH - Field::ESTIMATER_UNIT;
+    const ESTIMATER_BLOCK_UNIT: usize = 1;
+    const ESTIMATER_BLOCK_CENTER: usize = Field::ESTIMATER_BLOCK_UNIT * 3;
+    const ESTIMATER_BLOCK_WIDTH: usize =
+        Field::ESTIMATER_BLOCK_CENTER * 2 - Field::ESTIMATER_BLOCK_UNIT;
+    const ESTIMATER_BLOCK_AROUND_WIDTH: usize =
+        Field::ESTIMATER_BLOCK_CENTER * 4 - Field::ESTIMATER_BLOCK_UNIT;
+    const ESTIMATER_BLOCK_RADIUS: usize =
+        Field::ESTIMATER_BLOCK_CENTER * 2 - Field::ESTIMATER_BLOCK_UNIT;
     const MAX_POWER: usize = 800;
-    fn estimate_representative_points(&mut self) {
+    fn estimate_representative_points_around(&mut self) {
         let mut power = 100;
 
         let mut cnt = 0;
         let mut total_power = 0;
+        let mut points_not_broken = BTreeSet::new();
         while power <= Field::MAX_POWER {
-            for q in 0..(Field::WIDTH / Field::ESTIMATER_WIDTH) {
-                let y = Field::ESTIMATER_WIDTH * q + Field::ESTIMATER_CENTER;
-                for p in 0..(Field::WIDTH / Field::ESTIMATER_WIDTH) {
-                    let x = Field::ESTIMATER_WIDTH * p + Field::ESTIMATER_CENTER;
+            for q in 0..(Field::WIDTH / Field::ESTIMATER_BLOCK_WIDTH) {
+                let y = Field::ESTIMATER_BLOCK_WIDTH * q + Field::ESTIMATER_BLOCK_CENTER;
+                for p in 0..(Field::WIDTH / Field::ESTIMATER_BLOCK_WIDTH) {
+                    let x = Field::ESTIMATER_BLOCK_WIDTH * p + Field::ESTIMATER_BLOCK_CENTER;
                     if self.is_broken[y][x] {
                         continue;
                     }
+                    points_not_broken.insert((y, x));
 
                     let pos = &Pos::new(y, x);
 
@@ -131,6 +140,7 @@ impl Field {
                             // 壊れたら周りを推定
                             self.estimate_around(pos, power);
                             total_power += power;
+                            points_not_broken.remove(&(y, x));
                         }
                         Response::NotBroken => {}
                         Response::Finish => {}
@@ -141,7 +151,37 @@ impl Field {
             }
             power *= 2;
         }
+
+        points_not_broken.iter().for_each(|&(y, x)| {
+            self.estimate_around(&Pos::new(y, x), 5000);
+        });
+
+        self.compute_weighted_average_of_est_tough_cands();
+
         eprintln!("cnt: {:?} total_power:{}", cnt, total_power);
+    }
+
+    fn compute_weighted_average_of_est_tough_cands(&mut self) {
+        for y in 0..self.n {
+            for x in 0..self.n {
+                if self.est_tough_cands[y][x].is_empty() {
+                    self.estimated_toughness[y][x] = None;
+                } else {
+                    let mut total_w = 0.0;
+                    let mut total = 0.0;
+                    let mut max_prob = 0.0;
+                    self.est_tough_cands[y][x].iter().for_each(|(tough, prob)| {
+                        total_w += *prob;
+                        total += prob * (*tough as f32);
+                        if *prob > max_prob {
+                            max_prob = *prob;
+                        }
+                    });
+                    let estimated_toughness = (total / total_w) as usize;
+                    self.estimated_toughness[y][x] = Some((estimated_toughness, max_prob));
+                }
+            }
+        }
     }
 
     fn output_estimated_toughness(&self) {
@@ -159,7 +199,7 @@ impl Field {
 
     fn estimate_around(&mut self, pos: &Pos, power: usize) {
         let check_range = |val: usize, cnt: usize| {
-            let val = val as i32 - Field::ESTIMATER_CENTER as i32 + cnt as i32;
+            let val = val as i32 - Field::ESTIMATER_BLOCK_CENTER as i32 + cnt as i32;
             if val < 0 || Field::WIDTH as i32 <= val {
                 Err(())
             } else {
@@ -167,14 +207,14 @@ impl Field {
             }
         };
 
-        for j in 0..Field::ESTIMATER_WIDTH {
+        for j in 0..Field::ESTIMATER_BLOCK_AROUND_WIDTH {
             let res = check_range(pos.y, j);
             if res.is_err() {
                 continue;
             }
             let y = res.ok().unwrap();
 
-            for i in 0..Field::ESTIMATER_WIDTH {
+            for i in 0..Field::ESTIMATER_BLOCK_AROUND_WIDTH {
                 let res = check_range(pos.x, i);
                 if res.is_err() {
                     continue;
@@ -184,11 +224,11 @@ impl Field {
                 let dx = (x as i32 - i as i32).abs();
                 let dy = (y as i32 - j as i32).abs();
                 let dist = (dx + dy) as f32;
-                let max_dist = (Field::ESTIMATER_RADIUS * 2) as f32;
+                let max_dist = (Field::ESTIMATER_BLOCK_RADIUS * 2) as f32;
                 let prob = (max_dist) / (dist + max_dist).min(1.0);
 
-                let estimated_toughness = (power, prob);
-                self.estimated_toughness[y][x] = Some(estimated_toughness);
+                let est_tough = (power, prob);
+                self.est_tough_cands[y][x].push(est_tough);
             }
         }
     }
@@ -209,7 +249,7 @@ impl Sim {
 
     pub fn run(&mut self) {
         let mut field = Field::new(self.input.n, self.input.c);
-        field.estimate_representative_points();
+        field.estimate_representative_points_around();
         field.output_estimated_toughness();
     }
 
