@@ -117,7 +117,7 @@ impl Field {
     const MAX_POWER: usize = 800;
     const INITIAL_POWER: usize = 100;
     fn estimate_representative_points_around(&mut self) {
-        let mut power = INITIAL_POWER;
+        let mut power = Field::INITIAL_POWER;
 
         let mut cnt = 0;
         let mut total_power = 0;
