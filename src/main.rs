@@ -106,6 +106,41 @@ impl Field {
         }
     }
 
+    fn excavate_sources(&mut self, source_vec: &Vec<Pos>) {
+        self.excavate_completely(source_vec);
+    }
+
+    fn excavate_houses(&mut self, house_vec: &Vec<Pos>) {
+        self.excavate_completely(house_vec);
+    }
+
+    fn excavate_completely(&mut self, pos_vec: &Vec<Pos>) {
+        for pos in pos_vec.iter() {
+            if self.is_broken[pos.y][pos.x] {
+                continue;
+            }
+
+            // 掘削
+            const INITIAL: usize = 20;
+            let mut power = INITIAL;
+            loop {
+                let responce = self.excavate(pos, power);
+                match responce {
+                    Response::Broken => {
+                        // 壊れたら周りを推定
+                        self.estimate_around(pos, power);
+                        break;
+                    }
+                    Response::NotBroken => {}
+                    Response::Finish => {}
+                    Response::Invalid => {}
+                }
+                power *= 2;
+                power = power.min(5000);
+            }
+        }
+    }
+
     const ESTIMATER_BLOCK_UNIT: usize = 1;
     const ESTIMATER_BLOCK_CENTER: usize = Field::ESTIMATER_BLOCK_UNIT * 3;
     const ESTIMATER_BLOCK_WIDTH: usize =
@@ -115,7 +150,7 @@ impl Field {
     const ESTIMATER_BLOCK_RADIUS: usize =
         Field::ESTIMATER_BLOCK_CENTER * 2 - Field::ESTIMATER_BLOCK_UNIT;
     const MAX_POWER: usize = 800;
-    const INITIAL_POWER: usize = 100;
+    const INITIAL_POWER: usize = 50;
     fn estimate_representative_points_around(&mut self) {
         let mut power = Field::INITIAL_POWER;
 
@@ -250,6 +285,8 @@ impl Sim {
 
     pub fn run(&mut self) {
         let mut field = Field::new(self.input.n, self.input.c);
+        field.excavate_sources(&self.input.source_vec);
+        field.excavate_houses(&self.input.house_vec);
         field.estimate_representative_points_around();
         field.output_estimated_toughness();
     }
