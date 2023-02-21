@@ -9,6 +9,7 @@ use std::{
     clone,
     cmp::{max, min},
     collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque},
+    f32::consts::E,
     iter::FromIterator,
     mem::swap,
     ops::*,
@@ -18,7 +19,7 @@ use std::{
 };
 
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = false | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -44,6 +45,7 @@ enum Response {
     Broken,
     Finish,
     Invalid,
+    Skip,
 }
 
 #[derive(Debug, Clone)]
@@ -86,12 +88,58 @@ impl Field {
         }
     }
 
+    fn estimate_between_important_points(&mut self) {
+        // 水路を含め、水があるところ
+        let mut water_set = BTreeSet::new();
+        self.source_vec.iter().for_each(|pos| {
+            water_set.insert((pos.y, pos.x));
+        });
+
+        let sorted_house_vec =
+            self.sort_houses_by_manhattan_dist(&self.source_vec, &self.house_vec);
+        for house in sorted_house_vec {
+            let path = self.search_path_to_water(&house, &water_set);
+            for (cnt, pos) in path.iter().enumerate() {
+                if !IS_LOCAL_ESTIMATING_FIELD_MODE {
+                    if self.is_broken[pos.y][pos.x] {
+                        continue;
+                    }
+
+                    if cnt % 20 != 0 {
+                        continue;
+                    }
+
+                    let mut power = Field::INITIAL_POWER;
+                    while power <= Field::INITIAL_POWER * 3 {
+                        let responce = self.excavate(pos, power);
+                        match responce {
+                            Response::Broken => {
+                                // 壊れたら周りを推定
+                                self.estimate_around(pos, power);
+
+                                self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
+                                self.est_tough_cands[pos.y][pos.x].clear();
+                            }
+                            _ => {}
+                        };
+                        power += 100;
+                        power = power.min(5000);
+                    }
+
+                    self.excavate_around(pos);
+                }
+            }
+        }
+        self.compute_weighted_average_of_est_tough_cands();
+    }
+
     fn excavate(&mut self, pos: &Pos, power: usize) -> Response {
         if self.is_broken[pos.y][pos.x] {
-            panic!(
-                "this pos has already been broken. (y,x) : ({}, {})",
-                pos.y, pos.x
-            );
+            // panic!(
+            //     "this pos has already been broken. (y,x) : ({}, {})",
+            //     pos.y, pos.x
+            // );
+            return Response::Skip;
         }
         self.total_cost += power + self.c;
         if !IS_LOCAL_ESTIMATING_FIELD_MODE {
@@ -100,14 +148,6 @@ impl Field {
 
         if IS_LOCAL {
             unsafe {
-                let is_out_range = |val: i32| -> bool {
-                    if val < 0 || Field::WIDTH as i32 <= val {
-                        true
-                    } else {
-                        false
-                    }
-                };
-
                 let remained_toughness = TOUGHNESS[pos.y][pos.x];
                 let mut responce = Response::Invalid;
                 if power >= remained_toughness {
@@ -185,13 +225,51 @@ impl Field {
         }
     }
 
+    fn excavate_around(&mut self, pos: &Pos) {
+        let dy = vec![5, -5, 0, 0, 7, 7, -7, -7];
+        let dx = vec![0, 0, 5, -5, 7, -7, 7, -7];
+        let mut power = Field::INITIAL_POWER;
+        while power <= Field::MAX_POWER {
+            for i in 0..dx.len() {
+                let ny = pos.y as i32 + dy[i];
+                let nx = pos.x as i32 + dx[i];
+                if is_out_range(ny) || is_out_range(nx) {
+                    continue;
+                }
+                let ny = ny as usize;
+                let nx = nx as usize;
+                if self.is_broken[ny][nx] {
+                    continue;
+                }
+                let pos = &Pos::new(ny, nx);
+
+                let responce = self.excavate(pos, power);
+                match responce {
+                    Response::Broken => {
+                        // 壊れたら周りを推定
+                        self.estimate_around(pos, power);
+
+                        self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
+                        self.est_tough_cands[pos.y][pos.x].clear();
+                    }
+                    _ => {}
+                };
+            }
+            power += 100;
+            power = power.min(5000);
+        }
+    }
+
     fn excavate_sources(&mut self, source_vec: &Vec<Pos>) {
         for pos in source_vec {
             if self.is_broken[pos.y][pos.x] {
                 continue;
             }
             self.excavate_completely(pos, 20, ExcavateMode::Add);
+
+            self.excavate_around(pos);
         }
+        self.compute_weighted_average_of_est_tough_cands();
     }
 
     fn excavate_houses(&mut self, house_vec: &Vec<Pos>) {
@@ -200,7 +278,10 @@ impl Field {
                 continue;
             }
             self.excavate_completely(pos, 20, ExcavateMode::Add);
+
+            self.excavate_around(pos);
         }
+        self.compute_weighted_average_of_est_tough_cands();
     }
 
     fn excavate_completely(&mut self, pos: &Pos, initial_power: usize, mode: ExcavateMode) {
@@ -268,9 +349,7 @@ impl Field {
                             self.estimated_toughness[y][x] = Some((0, 1.0));
                             self.est_tough_cands[y][x].clear();
                         }
-                        Response::NotBroken => {}
-                        Response::Finish => {}
-                        Response::Invalid => {}
+                        _ => {}
                     }
                     cnt += 1;
                 }
@@ -423,7 +502,6 @@ impl Field {
 
     fn search_path_to_water(&self, house: &Pos, water_set: &BTreeSet<(usize, usize)>) -> Vec<Pos> {
         let (dist, parent) = self.dijkstra(house);
-
         let mut min_dist = usize::max_value();
         let mut water_pos = None;
         for &(y, x) in water_set {
@@ -452,14 +530,6 @@ impl Field {
 
     // https://qiita.com/okaponta_/items/018d0cd4f38ead3675c0
     fn dijkstra(&self, house: &Pos) -> (Vec<Vec<usize>>, Vec<Vec<Option<Pos>>>) {
-        let is_out_range = |val: i32| -> bool {
-            if val < 0 || Field::WIDTH as i32 <= val {
-                true
-            } else {
-                false
-            }
-        };
-
         let dy = vec![1, -1, 0, 0];
         let dx = vec![0, 0, 1, -1];
 
@@ -525,7 +595,8 @@ impl Sim {
         // 地形の推定フェーズ
         field.excavate_sources(&self.input.source_vec);
         field.excavate_houses(&self.input.house_vec);
-        field.estimate_representative_points_around();
+        field.estimate_between_important_points();
+        //field.estimate_representative_points_around();
         if IS_LOCAL_ESTIMATING_FIELD_MODE {
             field.output_estimated_toughness();
         }
@@ -839,6 +910,14 @@ mod procon_input {
 
     pub fn read_string() -> String {
         read_block()
+    }
+}
+
+fn is_out_range(val: i32) -> bool {
+    if val < 0 || Field::WIDTH as i32 <= val {
+        true
+    } else {
+        false
     }
 }
 
