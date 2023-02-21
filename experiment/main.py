@@ -33,9 +33,12 @@ def parse_from_stderr(stderr: str):
     return cnt, score, duration
 
 
+data_path = "./in/"
+
+
 def run_ahc_exe(filename: pathlib.Path):
     print(filename.name)
-    cmd = "ahc.exe < ./in/" + filename.name + " > ./out/" + filename.name
+    cmd = "ahc.exe < " + data_path + filename.name + " > ./out/" + filename.name
     path = os.path.join(os.getcwd(), filename)
     with open(path) as text:
         proc = subprocess.run(cmd, shell=True, stdin=text,
@@ -45,7 +48,6 @@ def run_ahc_exe(filename: pathlib.Path):
 
 
 def run_multi():
-    data_path = "./in/"
     input_list = []
     for filename in pathlib.Path(data_path).glob("*.txt"):
         input_list.append(filename)
@@ -58,20 +60,19 @@ def run_multi():
 def output_result(result_list):
     total_score = 0
     total_cnt = 0
+    print("file;  total_score;       score;   cnt; tot_cnt; time")
     for i, result in enumerate(result_list):
         filename, cnt, score, duration = result
         total_score += score
         total_cnt += cnt
         check_point_col = set_color_to_check_point(i)
         score_col = set_color_to_score(score)
-        print("{} => ".format(filename[:4])
-              + "total_score: {}{}{}, ".format(check_point_col,
-                                               total_score, Color.RESET)
-              + "score: {}{}{}, ".format(score_col, score, Color.RESET)
-              + "cnt: {:5d}, ".format(cnt)
-              + "total_cnt: {}{}{}, " .format(check_point_col,
-                                              total_cnt, Color.RESET)
-              + "time: {:.3f}".format(duration))
+        print("{};".format(filename[:4])
+              + "{}{:13d}{};".format(check_point_col, total_score, Color.RESET)
+                + "{}{:12d}{};".format(score_col, score, Color.RESET)
+                + "{:6d};".format(cnt)
+                + "{}{:8d}{};" .format(check_point_col, total_cnt, Color.RESET)
+                + "{:.3f}".format(duration))
     print("total: {}".format(total_score))
 
 

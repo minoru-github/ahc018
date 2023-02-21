@@ -20,14 +20,22 @@ use std::{
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
 const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
+static mut START_TIME: f64 = 0.0;
+static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
+
 fn main() {
     let start_time = my_lib::time::update();
+    if IS_LOCAL {
+        unsafe {
+            START_TIME = start_time;
+        }
+    }
 
     Sim::new().run();
 
-    let end_time = my_lib::time::update();
-    let duration = end_time - start_time;
-    eprintln!("{:?} ", duration);
+    // let end_time = my_lib::time::update();
+    // let duration = end_time - start_time;
+    // eprintln!("{:?} ", duration);
 }
 
 #[derive(Debug, Clone)]
@@ -52,14 +60,18 @@ struct Field {
     total_cost: usize,
     estimated_toughness: Vec<Vec<Option<(usize, f32)>>>,
     est_tough_cands: Vec<Vec<Vec<(usize, f32)>>>,
+    connections: Dsu,
+    house_vec: Vec<Pos>,
+    source_vec: Vec<Pos>,
 }
 
 impl Field {
     const WIDTH: usize = 200;
-    fn new(n: usize, c: usize) -> Self {
+    fn new(n: usize, c: usize, house_vec: Vec<Pos>, source_vec: Vec<Pos>) -> Self {
         let is_broken = vec![vec![false; n]; n];
         let estimated_toughness = vec![vec![None; n]; n];
         let est_tough_cands = vec![vec![vec![]; n]; n];
+        let connections = Dsu::new(n * n);
 
         Field {
             n,
@@ -68,6 +80,9 @@ impl Field {
             total_cost: 0,
             estimated_toughness,
             est_tough_cands,
+            connections,
+            house_vec,
+            source_vec,
         }
     }
 
@@ -85,16 +100,67 @@ impl Field {
 
         if IS_LOCAL {
             unsafe {
+                let is_out_range = |val: i32| -> bool {
+                    if val < 0 || Field::WIDTH as i32 <= val {
+                        true
+                    } else {
+                        false
+                    }
+                };
+
                 let remained_toughness = TOUGHNESS[pos.y][pos.x];
                 let mut responce = Response::Invalid;
                 if power >= remained_toughness {
                     TOUGHNESS[pos.y][pos.x] = 0;
                     self.is_broken[pos.y][pos.x] = true;
                     responce = Response::Broken;
+
+                    let dy = vec![1, -1, 0, 0];
+                    let dx = vec![0, 0, 1, -1];
+                    for i in 0..4 {
+                        let ny = pos.y as i32 + dy[i];
+                        let nx = pos.x as i32 + dx[i];
+                        if is_out_range(ny) || is_out_range(nx) {
+                            continue;
+                        }
+                        let ny = ny as usize;
+                        let nx = nx as usize;
+                        if self.is_broken[ny][nx] {
+                            let a = pos.y * Field::WIDTH + pos.x;
+                            let b = ny * Field::WIDTH + nx;
+                            self.connections.merge(a, b);
+                        }
+                    }
+
+                    let mut is_all_house_connected = true;
+                    for house in self.house_vec.iter() {
+                        let mut is_connected = false;
+                        for source in self.source_vec.iter() {
+                            let a = house.y * Field::WIDTH + house.x;
+                            let b = source.y * Field::WIDTH + source.x;
+                            if self.connections.is_same(a, b) {
+                                is_connected = true;
+                                break;
+                            }
+                        }
+                        if !is_connected {
+                            is_all_house_connected = false;
+                        }
+                    }
+
+                    if is_all_house_connected {
+                        eprintln!("{:?} ", 0);
+                        eprintln!("{:?} ", self.total_cost);
+                        let end_time = my_lib::time::update();
+                        let duration = end_time - START_TIME;
+                        eprintln!("{:?} ", duration);
+                        std::process::exit(0);
+                    }
                 } else {
                     TOUGHNESS[pos.y][pos.x] -= power;
                     responce = Response::NotBroken;
                 }
+
                 responce
             }
         } else {
@@ -107,10 +173,8 @@ impl Field {
                 }
                 2 => {
                     self.is_broken[pos.y][pos.x] = true;
-                    eprintln!("total cost {} ", self.total_cost);
 
                     std::process::exit(0);
-                    eprintln!("can't exit");
                     Response::Finish
                 }
                 _ => {
@@ -216,10 +280,6 @@ impl Field {
         });
 
         self.compute_weighted_average_of_est_tough_cands();
-
-        eprintln!("{:?} ", cnt);
-        eprintln!("{:?} ", total_power);
-        //eprintln!("cnt: {:?} total_power:{}", cnt, total_power);
     }
 
     fn compute_weighted_average_of_est_tough_cands(&mut self) {
@@ -424,8 +484,6 @@ impl Field {
     }
 }
 
-static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
-
 #[derive(Debug, Clone)]
 pub struct Sim {
     input: Input,
@@ -438,7 +496,12 @@ impl Sim {
     }
 
     pub fn run(&mut self) {
-        let mut field = Field::new(self.input.n, self.input.c);
+        let mut field = Field::new(
+            self.input.n,
+            self.input.c,
+            self.input.house_vec.clone(),
+            self.input.source_vec.clone(),
+        );
 
         // 地形の推定フェーズ
         field.excavate_sources(&self.input.source_vec);
@@ -757,5 +820,113 @@ mod procon_input {
 
     pub fn read_string() -> String {
         read_block()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Dsu {
+    parent_or_size: Vec<i64>, // 親のindex or 親のときはグループのサイズを-1した値(for 経路圧縮)
+    num_node: usize,
+    num_group: usize,
+
+    // extentions
+    min_index: Vec<usize>,
+}
+
+impl Dsu {
+    pub fn new(n: usize) -> Self {
+        let mut min_index = Vec::<usize>::new();
+        for index in 0..n as usize {
+            min_index.push(index);
+        }
+
+        Dsu {
+            parent_or_size: vec![-1; n],
+            num_node: n,
+            num_group: n,
+            min_index,
+        }
+    }
+
+    pub fn leader(&mut self, index: usize) -> usize {
+        //! 代表元のindex取得
+        assert!(index < self.num_node);
+
+        let parent_index = self.parent_or_size[index];
+        if self.parent_or_size[index] < 0 {
+            index
+        } else {
+            let parent_index = self.leader(parent_index as usize);
+            self.parent_or_size[index] = parent_index as i64;
+            parent_index
+        }
+    }
+
+    pub fn leader_vec(&self) -> Vec<usize> {
+        let mut leaders = Vec::new();
+        for (index, size_minus) in self.parent_or_size.iter().enumerate() {
+            if *size_minus < 0 {
+                leaders.push(index as usize);
+            }
+        }
+        leaders
+    }
+
+    pub fn merge(&mut self, a: usize, b: usize) -> usize {
+        assert!(a < self.num_node);
+        assert!(b < self.num_node);
+
+        let mut leader_a = self.leader(a);
+        let mut leader_b = self.leader(b);
+
+        // 既に同じグループ
+        if leader_a == leader_b {
+            return leader_a;
+        }
+
+        // グループのサイズが大きいほうにマージする
+        // 代表元のparent_or_sizeにはグループのサイズに-1した値が格納されている
+        let group_size_a = -self.parent_or_size[leader_a];
+        let group_size_b = -self.parent_or_size[leader_b];
+        // aを基準にする
+        if group_size_a < group_size_b {
+            std::mem::swap(&mut leader_a, &mut leader_b);
+        }
+        // サイズ加算
+        self.parent_or_size[leader_a] += self.parent_or_size[leader_b];
+        self.parent_or_size[leader_b] = leader_a as i64;
+
+        // グループ統合により、グループ数が減る
+        self.num_group -= 1;
+
+        // グループの最小index更新
+        if self.min_index[leader_a] > self.min_index[leader_b] {
+            self.min_index[leader_a] = self.min_index[leader_b];
+        }
+
+        leader_a
+    }
+
+    pub fn is_same(&mut self, a: usize, b: usize) -> bool {
+        assert!(a < self.num_node);
+        assert!(b < self.num_node);
+
+        self.leader(a) == self.leader(b)
+    }
+
+    pub fn group_size(&mut self, leader: usize) -> usize {
+        assert!(leader < self.num_node);
+
+        (-self.parent_or_size[leader]) as usize
+    }
+
+    pub fn group_num(&mut self) -> usize {
+        self.num_group
+    }
+
+    pub fn min_index(&mut self, leader: usize) -> usize {
+        assert!(leader < self.num_node);
+
+        self.min_index[leader]
     }
 }
