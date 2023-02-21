@@ -18,7 +18,7 @@ use std::{
 };
 
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = false | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -236,8 +236,8 @@ impl Field {
         Field::ESTIMATER_BLOCK_CENTER * 4 - Field::ESTIMATER_BLOCK_UNIT;
     const ESTIMATER_BLOCK_RADIUS: usize =
         Field::ESTIMATER_BLOCK_CENTER * 2 - Field::ESTIMATER_BLOCK_UNIT;
-    const MAX_POWER: usize = 800;
-    const INITIAL_POWER: usize = 50;
+    const MAX_POWER: usize = 160;
+    const INITIAL_POWER: usize = 80;
     fn estimate_representative_points_around(&mut self) {
         let mut power = Field::INITIAL_POWER;
 
