@@ -15,6 +15,8 @@ def prepare_execute_file():
     print("build complete")
 
     cmd = "copy /y .\\target\\release\\ahc.exe .\\experiment\\ahc.exe"
+    #cmd = "copy .\\target\\release .\\experiment\\"
+
     subprocess.run(cmd, shell=True)
     os.chdir('./experiment')
     path = pathlib.Path('ahc.exe')
@@ -33,17 +35,17 @@ def parse_from_stderr(stderr: str):
 
 def run_ahc_exe(filename: pathlib.Path):
     print(filename.name)
-    cmd = "ahc.exe > ./out/" + filename.name
+    cmd = "ahc.exe < ./in/" + filename.name + " > ./out/" + filename.name
     path = os.path.join(os.getcwd(), filename)
     with open(path) as text:
         proc = subprocess.run(cmd, shell=True, stdin=text,
-                              stdout=PIPE, stderr=PIPE, text=True)
+                              stdout=PIPE, stderr=PIPE, text=True, encoding="Shift-JIS")
         cnt, score, duration = parse_from_stderr(proc.stderr)
     return filename.name, cnt, score, duration
 
 
 def run_multi():
-    data_path = "./data/"
+    data_path = "./in/"
     input_list = []
     for filename in pathlib.Path(data_path).glob("*.txt"):
         input_list.append(filename)
