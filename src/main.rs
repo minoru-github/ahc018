@@ -12,12 +12,13 @@ use std::{
     iter::FromIterator,
     mem::swap,
     ops::*,
+    process::exit,
     rc::Rc,
-    slice::SliceIndex, process::exit,
+    slice::SliceIndex,
 };
 
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = false | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
 fn main() {
     let start_time = my_lib::time::update();
@@ -107,7 +108,7 @@ impl Field {
                 2 => {
                     self.is_broken[pos.y][pos.x] = true;
                     eprintln!("total cost {} ", self.total_cost);
-                    
+
                     std::process::exit(0);
                     eprintln!("can't exit");
                     Response::Finish
@@ -216,7 +217,9 @@ impl Field {
 
         self.compute_weighted_average_of_est_tough_cands();
 
-        eprintln!("cnt: {:?} total_power:{}", cnt, total_power);
+        eprintln!("{:?} ", cnt);
+        eprintln!("{:?} ", total_power);
+        //eprintln!("cnt: {:?} total_power:{}", cnt, total_power);
     }
 
     fn compute_weighted_average_of_est_tough_cands(&mut self) {
