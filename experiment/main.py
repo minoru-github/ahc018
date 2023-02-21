@@ -73,7 +73,7 @@ def output_result(result_list):
                 + "{:6d};".format(cnt)
                 + "{}{:8d}{};" .format(check_point_col, total_cnt, Color.RESET)
                 + "{:.3f}".format(duration))
-    print("total: {}".format(total_score))
+    print("total; {}".format(total_score))
 
 
 if __name__ == "__main__":
