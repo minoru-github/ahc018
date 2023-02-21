@@ -18,7 +18,7 @@ use std::{
 };
 
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = false | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -190,7 +190,7 @@ impl Field {
             if self.is_broken[pos.y][pos.x] {
                 continue;
             }
-            self.excavate_completely(pos, 20, ExcavateMode::Power);
+            self.excavate_completely(pos, 20, ExcavateMode::Add);
         }
     }
 
@@ -199,7 +199,7 @@ impl Field {
             if self.is_broken[pos.y][pos.x] {
                 continue;
             }
-            self.excavate_completely(pos, 20, ExcavateMode::Power);
+            self.excavate_completely(pos, 20, ExcavateMode::Add);
         }
     }
 
@@ -221,23 +221,20 @@ impl Field {
                     power *= 2;
                 }
                 ExcavateMode::Add => {
-                    power += 100;
+                    power += self.c;
                 }
             };
             power = power.min(5000);
         }
     }
 
-    const ESTIMATER_BLOCK_UNIT: usize = 1;
-    const ESTIMATER_BLOCK_CENTER: usize = Field::ESTIMATER_BLOCK_UNIT * 3;
-    const ESTIMATER_BLOCK_WIDTH: usize =
-        Field::ESTIMATER_BLOCK_CENTER * 2 - Field::ESTIMATER_BLOCK_UNIT;
-    const ESTIMATER_BLOCK_AROUND_WIDTH: usize =
-        Field::ESTIMATER_BLOCK_CENTER * 4 - Field::ESTIMATER_BLOCK_UNIT;
-    const ESTIMATER_BLOCK_RADIUS: usize =
-        Field::ESTIMATER_BLOCK_CENTER * 2 - Field::ESTIMATER_BLOCK_UNIT;
-    const MAX_POWER: usize = 160;
-    const INITIAL_POWER: usize = 80;
+    const EST_BLOCK_UNIT: usize = 1;
+    const EST_BLOCK_CENTER: usize = Field::EST_BLOCK_UNIT * 3;
+    const EST_BLOCK_WIDTH: usize = Field::EST_BLOCK_CENTER * 2 - Field::EST_BLOCK_UNIT;
+    const EST_BLOCK_AROUND_WIDTH: usize = Field::EST_BLOCK_CENTER * 4 - Field::EST_BLOCK_UNIT;
+    const EST_BLOCK_RADIUS: usize = Field::EST_BLOCK_CENTER * 2 - Field::EST_BLOCK_UNIT;
+    const INITIAL_POWER: usize = 20;
+    const MAX_POWER: usize = Field::INITIAL_POWER + 60;
     fn estimate_representative_points_around(&mut self) {
         let mut power = Field::INITIAL_POWER;
 
@@ -245,10 +242,10 @@ impl Field {
         let mut total_power = 0;
         let mut points_not_broken = BTreeSet::new();
         while power <= Field::MAX_POWER {
-            for q in 0..(Field::WIDTH / Field::ESTIMATER_BLOCK_WIDTH) {
-                let y = Field::ESTIMATER_BLOCK_WIDTH * q + Field::ESTIMATER_BLOCK_CENTER;
-                for p in 0..(Field::WIDTH / Field::ESTIMATER_BLOCK_WIDTH) {
-                    let x = Field::ESTIMATER_BLOCK_WIDTH * p + Field::ESTIMATER_BLOCK_CENTER;
+            for q in 0..(Field::WIDTH / Field::EST_BLOCK_WIDTH) {
+                let y = Field::EST_BLOCK_WIDTH * q + Field::EST_BLOCK_CENTER;
+                for p in 0..(Field::WIDTH / Field::EST_BLOCK_WIDTH) {
+                    let x = Field::EST_BLOCK_WIDTH * p + Field::EST_BLOCK_CENTER;
                     if self.is_broken[y][x] {
                         continue;
                     }
@@ -272,7 +269,9 @@ impl Field {
                     cnt += 1;
                 }
             }
-            power *= 2;
+            power += self.c;
+            power = power.min(5000);
+            //power *= 2;
         }
 
         points_not_broken.iter().for_each(|&(y, x)| {
@@ -320,7 +319,7 @@ impl Field {
 
     fn estimate_around(&mut self, pos: &Pos, power: usize) {
         let check_range = |val: usize, cnt: usize| {
-            let val = val as i32 - Field::ESTIMATER_BLOCK_CENTER as i32 + cnt as i32;
+            let val = val as i32 - Field::EST_BLOCK_CENTER as i32 + cnt as i32;
             if val < 0 || Field::WIDTH as i32 <= val {
                 Err(())
             } else {
@@ -328,14 +327,14 @@ impl Field {
             }
         };
 
-        for j in 0..Field::ESTIMATER_BLOCK_AROUND_WIDTH {
+        for j in 0..Field::EST_BLOCK_AROUND_WIDTH {
             let res = check_range(pos.y, j);
             if res.is_err() {
                 continue;
             }
             let y = res.ok().unwrap();
 
-            for i in 0..Field::ESTIMATER_BLOCK_AROUND_WIDTH {
+            for i in 0..Field::EST_BLOCK_AROUND_WIDTH {
                 let res = check_range(pos.x, i);
                 if res.is_err() {
                     continue;
@@ -345,7 +344,7 @@ impl Field {
                 let dx = (x as i32 - i as i32).abs();
                 let dy = (y as i32 - j as i32).abs();
                 let dist = (dx + dy) as f32;
-                let max_dist = (Field::ESTIMATER_BLOCK_RADIUS * 2) as f32;
+                let max_dist = (Field::EST_BLOCK_RADIUS * 2) as f32;
                 let prob = (max_dist) / (dist + max_dist).min(1.0);
 
                 let est_tough = (power, prob);
@@ -395,7 +394,12 @@ impl Field {
                     if self.is_broken[pos.y][pos.x] {
                         continue;
                     }
-                    let initial_power = self.estimated_toughness[pos.y][pos.x].unwrap().0;
+                    let initial_power =
+                        if let Some((tough, _)) = self.estimated_toughness[pos.y][pos.x] {
+                            tough
+                        } else {
+                            5000
+                        };
                     self.excavate_completely(&pos, initial_power, ExcavateMode::Add);
                 }
             }
