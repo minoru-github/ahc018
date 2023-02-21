@@ -233,8 +233,8 @@ impl Field {
     const EST_BLOCK_WIDTH: usize = Field::EST_BLOCK_CENTER * 2 - Field::EST_BLOCK_UNIT;
     const EST_BLOCK_AROUND_WIDTH: usize = Field::EST_BLOCK_CENTER * 4 - Field::EST_BLOCK_UNIT;
     const EST_BLOCK_RADIUS: usize = Field::EST_BLOCK_CENTER * 2 - Field::EST_BLOCK_UNIT;
-    const INITIAL_POWER: usize = 20;
-    const MAX_POWER: usize = Field::INITIAL_POWER + 60;
+    const INITIAL_POWER: usize = 128;
+    const MAX_POWER: usize = Field::INITIAL_POWER * 2;
     fn estimate_representative_points_around(&mut self) {
         let mut power = Field::INITIAL_POWER;
 
@@ -261,6 +261,9 @@ impl Field {
                             self.estimate_around(pos, power);
                             total_power += power;
                             points_not_broken.remove(&(y, x));
+
+                            self.estimated_toughness[y][x] = Some((0, 1.0));
+                            self.est_tough_cands[y][x].clear();
                         }
                         Response::NotBroken => {}
                         Response::Finish => {}
@@ -284,6 +287,12 @@ impl Field {
     fn compute_weighted_average_of_est_tough_cands(&mut self) {
         for y in 0..self.n {
             for x in 0..self.n {
+                if let Some((tough, _)) = self.estimated_toughness[y][x] {
+                    if tough == 0 {
+                        continue;
+                    }
+                }
+
                 if self.est_tough_cands[y][x].is_empty() {
                     self.estimated_toughness[y][x] = None;
                 } else {
@@ -340,6 +349,9 @@ impl Field {
                     continue;
                 }
                 let x = res.ok().unwrap();
+                if (y, x) == (pos.y, pos.x) {
+                    continue;
+                }
 
                 let dx = (x as i32 - i as i32).abs();
                 let dy = (y as i32 - j as i32).abs();
