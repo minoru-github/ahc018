@@ -212,6 +212,9 @@ impl Field {
                 Response::Broken => {
                     // 壊れたら周りを推定
                     self.estimate_around(pos, power);
+
+                    self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
+                    self.est_tough_cands[pos.y][pos.x].clear();
                     break;
                 }
                 _ => {}
