@@ -19,7 +19,7 @@ use std::{
 };
 
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = false | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -105,14 +105,12 @@ impl Field {
 
                     let mut power = Field::INITIAL_POWER;
                     let mut total_power = power;
-                    let mut is_broken = false;
                     while total_power <= Field::MAX_POWER {
                         let responce = self.excavate(pos, power);
                         match responce {
                             Response::Broken => {
                                 // 壊れたら周りを推定
-                                is_broken = true;
-                                self.estimate_around(pos, total_power, is_broken);
+                                self.estimate_around(pos, total_power);
 
                                 self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
                                 self.est_tough_cands[pos.y][pos.x].clear();
@@ -120,9 +118,7 @@ impl Field {
                             }
                             _ => {}
                         };
-                    }
-                    if !is_broken {
-                        self.estimate_around(pos, total_power, is_broken);
+                        total_power += power;
                     }
 
                     self.excavate_around(pos, 8, Field::MAX_POWER);
@@ -249,15 +245,12 @@ impl Field {
                 Field::INITIAL_POWER
             };
             let mut total_power = power;
-            let mut is_broken = false;
-
             while total_power <= max_power {
                 let responce = self.excavate(pos, power);
                 match responce {
                     Response::Broken => {
                         // 壊れたら周りを推定
-                        is_broken = true;
-                        self.estimate_around(pos, total_power, is_broken);
+                        self.estimate_around(pos, total_power);
 
                         self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
                         self.est_tough_cands[pos.y][pos.x].clear();
@@ -266,9 +259,6 @@ impl Field {
                     _ => {}
                 };
                 total_power += power;
-            }
-            if !is_broken {
-                self.estimate_around(pos, total_power, is_broken);
             }
         }
     }
@@ -282,6 +272,7 @@ impl Field {
 
             self.excavate_around(pos, 16, Field::MAX_POWER);
         }
+        //self.compute_weighted_average_of_est_tough_cands();
     }
 
     fn excavate_houses(&mut self, house_vec: &Vec<Pos>) {
@@ -293,6 +284,7 @@ impl Field {
 
             self.excavate_around(pos, 16, Field::MAX_POWER);
         }
+        //self.compute_weighted_average_of_est_tough_cands();
     }
 
     fn excavate_completely(&mut self, pos: &Pos, initial_power: usize) {
@@ -304,7 +296,7 @@ impl Field {
             match responce {
                 Response::Broken => {
                     // 壊れたら周りを推定
-                    self.estimate_around(pos, total_power, true);
+                    self.estimate_around(pos, total_power);
 
                     self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
                     self.est_tough_cands[pos.y][pos.x].clear();
@@ -325,10 +317,11 @@ impl Field {
     const EST_BLOCK_AROUND_WIDTH: usize = Field::EST_BLOCK_CENTER * 4 - Field::EST_BLOCK_UNIT;
     const EST_BLOCK_RADIUS: usize = Field::EST_BLOCK_CENTER * 2 - Field::EST_BLOCK_UNIT;
     const INITIAL_POWER: usize = 100;
-    const MAX_POWER: usize = 400;
+    const MAX_POWER: usize = 300;
     fn estimate_representative_points_around(&mut self) {
         let mut power = Field::INITIAL_POWER;
 
+        let mut cnt = 0;
         let mut total_power = 0;
         let mut points_not_broken = BTreeSet::new();
         while total_power <= Field::MAX_POWER {
@@ -348,7 +341,7 @@ impl Field {
                     match responce {
                         Response::Broken => {
                             // 壊れたら周りを推定
-                            self.estimate_around(pos, total_power, true);
+                            self.estimate_around(pos, total_power);
                             points_not_broken.remove(&(y, x));
 
                             self.estimated_toughness[y][x] = Some((0, 1.0));
@@ -357,14 +350,17 @@ impl Field {
                         }
                         _ => {}
                     }
+                    cnt += 1;
                 }
             }
             total_power += power;
         }
 
         points_not_broken.iter().for_each(|&(y, x)| {
-            self.estimate_around(&Pos::new(y, x), 5000, false);
+            self.estimate_around(&Pos::new(y, x), 5000);
         });
+
+        //self.compute_weighted_average_of_est_tough_cands();
     }
 
     fn compute_weighted_average(&mut self, y: usize, x: usize) {
@@ -405,14 +401,11 @@ impl Field {
         }
     }
 
-    fn estimate_around(&mut self, pos: &Pos, power: usize, is_broken: bool) {
-        let (power, est_width) = if is_broken {
-            // 強めに壊してる分を補正
-            (power / 2, 11)
-        } else {
-            (5000, 3)
-        };
-        let power = power.min(5000).max(20);
+    fn estimate_around(&mut self, pos: &Pos, power: usize) {
+        // 強めに壊してる分を補正
+        let power = power / 2;
+
+        let est_width = 11;
         let est_center = est_width / 2;
         let est_radius = est_width / 2;
         let check_range = |val: usize, cnt: usize| {
@@ -610,9 +603,8 @@ impl Sim {
         // 地形の推定フェーズ
         field.excavate_sources(&self.input.source_vec);
         field.excavate_houses(&self.input.house_vec);
-
-        field.estimate_representative_points_around();
-        //field.estimate_between_important_points();
+        //field.estimate_representative_points_around();
+        field.estimate_between_important_points();
         if IS_LOCAL_ESTIMATING_FIELD_MODE {
             field.output_estimated_toughness();
         }
