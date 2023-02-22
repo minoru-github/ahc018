@@ -409,9 +409,9 @@ impl Field {
     fn estimate_around(&mut self, pos: &Pos, power: usize, is_broken: bool) {
         let (power, est_width) = if is_broken {
             // 強めに壊してる分を補正
-            (power / 2, 11)
+            (power / 3, 11)
         } else {
-            (5000, 3)
+            (5000, 5)
         };
         let power = power.min(5000).max(20);
         let est_center = est_width / 2;
