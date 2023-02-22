@@ -19,7 +19,7 @@ use std::{
 };
 
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = false | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -272,7 +272,6 @@ impl Field {
 
             self.excavate_around(pos, 16, Field::MAX_POWER);
         }
-        //self.compute_weighted_average_of_est_tough_cands();
     }
 
     fn excavate_houses(&mut self, house_vec: &Vec<Pos>) {
@@ -284,7 +283,6 @@ impl Field {
 
             self.excavate_around(pos, 16, Field::MAX_POWER);
         }
-        //self.compute_weighted_average_of_est_tough_cands();
     }
 
     fn excavate_completely(&mut self, pos: &Pos, initial_power: usize) {
@@ -357,7 +355,6 @@ impl Field {
             self.estimate_around(&Pos::new(y, x), 5000);
         });
 
-        //self.compute_weighted_average_of_est_tough_cands();
     }
 
     fn compute_weighted_average(&mut self, y: usize, x: usize) {
@@ -384,14 +381,6 @@ impl Field {
             self.estimated_toughness[y][x] = Some((estimated_toughness, max_prob));
         }
     }
-
-    // fn compute_weighted_average_of_est_tough_cands(&mut self) {
-    //     for y in 0..self.n {
-    //         for x in 0..self.n {
-    //             self.compute_weighted_average(y, x);
-    //         }
-    //     }
-    // }
 
     fn output_estimated_toughness(&self) {
         for y in 0..self.n {
