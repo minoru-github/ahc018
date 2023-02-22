@@ -49,12 +49,6 @@ enum Response {
 }
 
 #[derive(Debug, Clone)]
-enum ExcavateMode {
-    Power,
-    Add,
-}
-
-#[derive(Debug, Clone)]
 struct Field {
     n: usize,
     c: usize,
@@ -105,28 +99,29 @@ impl Field {
                         continue;
                     }
 
-                    if cnt % 25 != 0 {
+                    if cnt % 50 != 0 {
                         continue;
                     }
 
                     let mut power = Field::INITIAL_POWER;
-                    while power <= Field::MAX_POWER {
+                    let mut total_power = power;
+                    while total_power <= Field::MAX_POWER {
                         let responce = self.excavate(pos, power);
                         match responce {
                             Response::Broken => {
                                 // 壊れたら周りを推定
-                                self.estimate_around(pos, power);
+                                self.estimate_around(pos, total_power);
 
                                 self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
                                 self.est_tough_cands[pos.y][pos.x].clear();
+                                break;
                             }
                             _ => {}
                         };
-                        power += 100;
-                        power = power.min(5000);
+                        total_power += power;
                     }
 
-                    self.excavate_around(pos, 8, Field::INITIAL_POWER * 2);
+                    self.excavate_around(pos, 8, Field::MAX_POWER);
                 }
             }
         }
@@ -225,8 +220,12 @@ impl Field {
     }
 
     fn excavate_around(&mut self, pos: &Pos, around_size: usize, max_power: usize) {
-        let dy = vec![10, -10, 0, 0, 20, 20, -20, -20, 40, -40, 0, 0];
-        let dx = vec![0, 0, 10, -10, 20, -20, 20, -20, 0, 0, 40, -40];
+        let dy = vec![
+            10, -10, 0, 0, 15, 15, -15, -15, 25, -25, 0, 0, 30, 30, -30, -30,
+        ];
+        let dx = vec![
+            0, 0, 10, -10, 15, -15, 15, -15, 0, 0, 25, -25, 30, -30, 30, -30,
+        ];
 
         for i in 0..around_size {
             let ny = pos.y as i32 + dy[i];
@@ -245,20 +244,21 @@ impl Field {
             } else {
                 Field::INITIAL_POWER
             };
-            while power <= max_power {
+            let mut total_power = power;
+            while total_power <= max_power {
                 let responce = self.excavate(pos, power);
                 match responce {
                     Response::Broken => {
                         // 壊れたら周りを推定
-                        self.estimate_around(pos, power * 8 / 10);
+                        self.estimate_around(pos, total_power);
 
                         self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
                         self.est_tough_cands[pos.y][pos.x].clear();
+                        break;
                     }
                     _ => {}
                 };
-                power += 100;
-                power = power.min(5000);
+                total_power += power;
             }
         }
     }
@@ -268,9 +268,9 @@ impl Field {
             if self.is_broken[pos.y][pos.x] {
                 continue;
             }
-            self.excavate_completely(pos, 20, ExcavateMode::Add);
+            self.excavate_completely(pos, Field::INITIAL_POWER / 2);
 
-            self.excavate_around(pos, 12, Field::MAX_POWER);
+            self.excavate_around(pos, 16, Field::MAX_POWER);
         }
         //self.compute_weighted_average_of_est_tough_cands();
     }
@@ -280,22 +280,23 @@ impl Field {
             if self.is_broken[pos.y][pos.x] {
                 continue;
             }
-            self.excavate_completely(pos, 20, ExcavateMode::Add);
+            self.excavate_completely(pos, Field::INITIAL_POWER / 2);
 
-            self.excavate_around(pos, 12, Field::MAX_POWER);
+            self.excavate_around(pos, 16, Field::MAX_POWER);
         }
         //self.compute_weighted_average_of_est_tough_cands();
     }
 
-    fn excavate_completely(&mut self, pos: &Pos, initial_power: usize, mode: ExcavateMode) {
+    fn excavate_completely(&mut self, pos: &Pos, initial_power: usize) {
         // 掘削
         let mut power = initial_power;
+        let mut total_power = power;
         loop {
             let responce = self.excavate(pos, power);
             match responce {
                 Response::Broken => {
                     // 壊れたら周りを推定
-                    self.estimate_around(pos, power);
+                    self.estimate_around(pos, total_power);
 
                     self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
                     self.est_tough_cands[pos.y][pos.x].clear();
@@ -303,15 +304,7 @@ impl Field {
                 }
                 _ => {}
             }
-            match mode {
-                ExcavateMode::Power => {
-                    power *= 2;
-                }
-                ExcavateMode::Add => {
-                    power += self.c;
-                }
-            };
-            power = power.min(5000);
+            total_power += power;
         }
     }
 
@@ -320,15 +313,15 @@ impl Field {
     const EST_BLOCK_WIDTH: usize = Field::EST_BLOCK_CENTER * 2 - Field::EST_BLOCK_UNIT;
     const EST_BLOCK_AROUND_WIDTH: usize = Field::EST_BLOCK_CENTER * 4 - Field::EST_BLOCK_UNIT;
     const EST_BLOCK_RADIUS: usize = Field::EST_BLOCK_CENTER * 2 - Field::EST_BLOCK_UNIT;
-    const INITIAL_POWER: usize = 60;
-    const MAX_POWER: usize = 400;
+    const INITIAL_POWER: usize = 100;
+    const MAX_POWER: usize = 300;
     fn estimate_representative_points_around(&mut self) {
         let mut power = Field::INITIAL_POWER;
 
         let mut cnt = 0;
         let mut total_power = 0;
         let mut points_not_broken = BTreeSet::new();
-        while power <= Field::MAX_POWER {
+        while total_power <= Field::MAX_POWER {
             for q in 0..(Field::WIDTH / Field::EST_BLOCK_WIDTH) {
                 let y = Field::EST_BLOCK_WIDTH * q + Field::EST_BLOCK_CENTER;
                 for p in 0..(Field::WIDTH / Field::EST_BLOCK_WIDTH) {
@@ -345,21 +338,19 @@ impl Field {
                     match responce {
                         Response::Broken => {
                             // 壊れたら周りを推定
-                            self.estimate_around(pos, power);
-                            total_power += power;
+                            self.estimate_around(pos, total_power);
                             points_not_broken.remove(&(y, x));
 
                             self.estimated_toughness[y][x] = Some((0, 1.0));
                             self.est_tough_cands[y][x].clear();
+                            break;
                         }
                         _ => {}
                     }
                     cnt += 1;
                 }
             }
-            power += self.c;
-            power = power.min(5000);
-            //power *= 2;
+            total_power += power;
         }
 
         points_not_broken.iter().for_each(|&(y, x)| {
@@ -416,7 +407,10 @@ impl Field {
     }
 
     fn estimate_around(&mut self, pos: &Pos, power: usize) {
-        let est_width = 13;
+        // 強めに壊してる分を補正
+        let power = power / 2;
+
+        let est_width = 11;
         let est_center = est_width / 2;
         let est_radius = est_width / 2;
         let check_range = |val: usize, cnt: usize| {
@@ -445,12 +439,11 @@ impl Field {
                     continue;
                 }
 
-                let dx = (x as i32 - i as i32).abs();
-                let dy = (y as i32 - j as i32).abs();
+                let dx = (i as i32 - est_center as i32).abs();
+                let dy = (j as i32 - est_center as i32).abs();
                 let dist = (dx + dy) as f32;
                 let max_dist = (est_radius * 2) as f32;
-                let prob = (max_dist) / (dist + max_dist).min(1.0);
-
+                let prob = (max_dist) / (dist + max_dist).max(1.0);
                 let est_tough = (power, prob);
                 self.est_tough_cands[y][x].push(est_tough);
                 self.compute_weighted_average(y, x);
@@ -508,13 +501,13 @@ impl Field {
                         if let Some((tough, _)) = self.estimated_toughness[pos.y][pos.x] {
                             tough
                         } else {
-                            5000
+                            Field::INITIAL_POWER
                         };
-                    println!(
-                        "# pos ({}, {}), est {:?}",
-                        pos.y, pos.x, self.estimated_toughness[pos.y][pos.x]
-                    );
-                    self.excavate_completely(&pos, initial_power, ExcavateMode::Add);
+                    // println!(
+                    //     "# pos ({}, {}), est {:?}",
+                    //     pos.y, pos.x, self.estimated_toughness[pos.y][pos.x]
+                    // );
+                    self.excavate_completely(&pos, initial_power);
                 }
             }
         }
