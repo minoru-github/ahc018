@@ -19,7 +19,7 @@ use std::{
 };
 
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = false | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -112,7 +112,7 @@ impl Field {
                             Response::Broken => {
                                 // 壊れたら周りを推定
                                 is_broken = true;
-                                self.estimate_around(pos, total_power, is_broken);
+                                self.estimate_around(pos, power, total_power, is_broken);
 
                                 self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
                                 self.est_tough_cands[pos.y][pos.x].clear();
@@ -123,7 +123,7 @@ impl Field {
                         total_power += power;
                     }
                     if !is_broken {
-                        self.estimate_around(pos, total_power, is_broken);
+                        self.estimate_around(pos, power, total_power, is_broken);
                     }
 
                     self.excavate_around(pos, 8, Field::MAX_POWER);
@@ -193,6 +193,7 @@ impl Field {
                         let end_time = my_lib::time::update();
                         let duration = end_time - START_TIME;
                         eprintln!("{:?} ", duration);
+                        eprintln!("{:?} ", self.source_vec.len());
                         std::process::exit(0);
                     }
                 } else {
@@ -258,7 +259,7 @@ impl Field {
                     Response::Broken => {
                         // 壊れたら周りを推定
                         is_broken = true;
-                        self.estimate_around(pos, total_power, is_broken);
+                        self.estimate_around(pos, power, total_power, is_broken);
 
                         self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
                         self.est_tough_cands[pos.y][pos.x].clear();
@@ -269,7 +270,7 @@ impl Field {
                 total_power += power;
             }
             if !is_broken {
-                self.estimate_around(pos, total_power, is_broken);
+                self.estimate_around(pos, power, total_power, is_broken);
             }
         }
     }
@@ -299,13 +300,17 @@ impl Field {
     fn excavate_completely(&mut self, pos: &Pos, initial_power: usize) {
         // 掘削
         let mut power = initial_power;
-        let mut total_power = power;
+        let mut total_power = 0;
         loop {
+            if total_power + power >= 5000 {
+                power = 5000 - total_power;
+            }
+            total_power += power;
             let responce = self.excavate(pos, power);
             match responce {
                 Response::Broken => {
                     // 壊れたら周りを推定
-                    self.estimate_around(pos, total_power, true);
+                    self.estimate_around(pos, power, total_power, true);
 
                     self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
                     self.est_tough_cands[pos.y][pos.x].clear();
@@ -313,10 +318,8 @@ impl Field {
                 }
                 _ => {}
             }
-            if total_power + power >= 5000 {
-                power = 5000 - total_power;
-            }
-            total_power += power;
+
+            power = Field::INITIAL_POWER;
         }
     }
 
@@ -349,7 +352,7 @@ impl Field {
                     match responce {
                         Response::Broken => {
                             // 壊れたら周りを推定
-                            self.estimate_around(pos, total_power, true);
+                            self.estimate_around(pos, power, total_power, true);
                             points_not_broken.remove(&(y, x));
 
                             self.estimated_toughness[y][x] = Some((0, 1.0));
@@ -364,7 +367,7 @@ impl Field {
         }
 
         points_not_broken.iter().for_each(|&(y, x)| {
-            self.estimate_around(&Pos::new(y, x), 5000, false);
+            self.estimate_around(&Pos::new(y, x), power, 5000, false);
         });
     }
 
@@ -406,14 +409,14 @@ impl Field {
         }
     }
 
-    fn estimate_around(&mut self, pos: &Pos, power: usize, is_broken: bool) {
-        let (power, est_width) = if is_broken {
+    fn estimate_around(&mut self, pos: &Pos, power: usize, total_power: usize, is_broken: bool) {
+        let (tough, est_width) = if is_broken {
             // 強めに壊してる分を補正
-            (power / 3, 11)
+            (total_power - power / 2, 11)
         } else {
             (5000, 5)
         };
-        let power = power.min(5000).max(20);
+        let tough = tough.min(5000).max(20);
         let est_center = est_width / 2;
         let est_radius = est_width / 2;
         let check_range = |val: usize, cnt: usize| {
@@ -447,7 +450,7 @@ impl Field {
                 let dist = (dx + dy) as f32;
                 let max_dist = (est_radius * 2) as f32;
                 let prob = (max_dist * max_dist) / (dist * dist + max_dist * max_dist).max(1.0);
-                let est_tough = (power, prob);
+                let est_tough = (tough, prob);
                 self.est_tough_cands[y][x].push(est_tough);
                 self.compute_weighted_average(y, x);
 
