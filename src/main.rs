@@ -95,6 +95,7 @@ impl Field {
             let path = self.search_path_to_water(&house, &water_set);
             for (cnt, pos) in path.iter().enumerate() {
                 if !IS_LOCAL_ESTIMATING_FIELD_MODE {
+                    water_set.insert((pos.y, pos.x));
                     if self.is_broken[pos.y][pos.x] {
                         continue;
                     }
