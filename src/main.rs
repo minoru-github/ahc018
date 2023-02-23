@@ -13,13 +13,14 @@ use std::{
     iter::FromIterator,
     mem::swap,
     ops::*,
+    path,
     process::exit,
     rc::Rc,
     slice::SliceIndex,
 };
 
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = false | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -516,9 +517,19 @@ impl Field {
             water_set.insert((pos.y, pos.x));
         });
 
-        let sorted_house_vec = self.sort_houses_by_manhattan_dist(source_vec, house_vec);
-        for house in sorted_house_vec {
-            let path = self.search_path_to_water(&house, &water_set);
+        //let sorted_house_vec = self.sort_houses_by_manhattan_dist(source_vec, house_vec);
+        let mut sorted_house_vec = vec![];
+
+        for house in house_vec.iter() {
+            let path = self.search_path_to_water(house, &water_set);
+            let path_cost = self.compute_estimated_path_cost(&path);
+            //eprintln!("path_cost {:?} ", path_cost);
+            sorted_house_vec.push((path_cost, house));
+        }
+        sorted_house_vec.sort();
+
+        for &(_, house) in sorted_house_vec.iter() {
+            let path = self.search_path_to_water(house, &water_set);
             for pos in path {
                 water_set.insert((pos.y, pos.x));
                 if !IS_LOCAL_ESTIMATING_FIELD_MODE {
@@ -539,6 +550,23 @@ impl Field {
                 }
             }
         }
+    }
+
+    fn compute_estimated_path_cost(&self, path: &Vec<Pos>) -> usize {
+        let mut path_cost = 0;
+        for pos in path {
+            let tough = if self.is_broken[pos.y][pos.x] {
+                0
+            } else {
+                if let Some((tough, _)) = self.estimated_toughness[pos.y][pos.x] {
+                    tough
+                } else {
+                    5000
+                }
+            };
+            path_cost += tough + self.c;
+        }
+        path_cost
     }
 
     fn search_path_to_water(&self, house: &Pos, water_set: &BTreeSet<(usize, usize)>) -> Vec<Pos> {
