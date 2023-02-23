@@ -21,7 +21,7 @@ use std::{
 };
 
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = false | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -304,9 +304,16 @@ impl Field {
             if self.is_broken[pos.y][pos.x] {
                 continue;
             }
-            self.excavate_completely(pos, Field::INITIAL_POWER / 2);
-
-            self.excavate_around(pos, 0, 16, Field::MAX_POWER);
+            if source_vec.len() == 1 {
+                self.excavate_around(pos, 0, 16, Field::MAX_POWER);
+            } else if source_vec.len() == 2 {
+                self.excavate_completely(pos, Field::INITIAL_POWER / 2);
+                self.excavate_around(pos, 0, 16, Field::MAX_POWER + 100);
+            } else if source_vec.len() == 3 {
+                self.excavate_around(pos, 0, 8, Field::MAX_POWER / 2);
+            } else {
+                self.excavate_around(pos, 0, 4, Field::MAX_POWER / 2);
+            }
         }
     }
 
@@ -557,7 +564,7 @@ impl Field {
                 {
                     tough
                 } else {
-                    Field::INITIAL_POWER/2
+                    Field::INITIAL_POWER / 2
                 };
                 println!(
                     "# corner pos ({}, {}), est {:?}",
@@ -627,6 +634,7 @@ impl Field {
 
         let mut path = vec![];
         let mut cur = Pos::new(water_pos.y, water_pos.x);
+        path.push(cur);
         while let Some(from) = parent[cur.y][cur.x] {
             path.push(from);
             cur = from;
