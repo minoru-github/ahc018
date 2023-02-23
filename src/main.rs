@@ -1,6 +1,7 @@
 #![allow(unused)]
 use itertools::Itertools;
 use my_lib::*;
+use num::traits::Pow;
 use procon_input::*;
 use rand::prelude::*;
 use rand_pcg::Mcg128Xsl64;
@@ -20,7 +21,7 @@ use std::{
 };
 
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = false | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -407,6 +408,7 @@ impl Field {
             let mut total_w = 0.0;
             let mut total = 0.0;
             let mut max_prob = 0.0;
+            let mut total_prob = 0.0;
             self.est_tough_cands[y][x].iter().for_each(|(tough, prob)| {
                 total_w += *prob;
                 total += prob * (*tough as f32);
@@ -468,12 +470,17 @@ impl Field {
                     continue;
                 }
 
+                let sigmoid = |a: f64| 1.0 / (1.0 + (-100.0 * (a - 0.98)).exp());
+
                 let dx = (i as i32 - est_center as i32).abs();
                 let dy = (j as i32 - est_center as i32).abs();
                 let dist = (dx + dy) as f32;
                 let max_dist = (est_radius * 2) as f32;
                 let prob = (max_dist * max_dist) / (dist * dist + max_dist * max_dist).max(1.0);
+                //let est_tough = (tough, sigmoid(prob as f64) as f32);
+                let prob = (prob as f64).powf(45.0) as f32;
                 let est_tough = (tough, prob);
+
                 self.est_tough_cands[y][x].push(est_tough);
                 self.compute_weighted_average(y, x);
 
@@ -558,7 +565,8 @@ impl Field {
             let tough = if self.is_broken[pos.y][pos.x] {
                 0
             } else {
-                if let Some((tough, _)) = self.estimated_toughness[pos.y][pos.x] {
+                if let Some((tough, prob)) = self.estimated_toughness[pos.y][pos.x] {
+                    //eprintln!("{:?} {}", tough, prob);
                     tough
                 } else {
                     5000
@@ -566,6 +574,7 @@ impl Field {
             };
             path_cost += tough + self.c;
         }
+        //eprintln!("");
         path_cost
     }
 
