@@ -19,7 +19,7 @@ use std::{
 };
 
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = false | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -245,6 +245,27 @@ impl Field {
             if self.is_broken[ny][nx] {
                 continue;
             }
+
+            let range = 7;
+            let mut broken_cnt = 0;
+            for q in -range..range {
+                for p in -range..range {
+                    let px = nx as i32 + p;
+                    let qy = ny as i32 + q;
+                    if is_out_range(qy) || is_out_range(px) {
+                        continue;
+                    }
+
+                    if self.is_broken[qy as usize][px as usize] {
+                        broken_cnt += 1;
+                    }
+                }
+            }
+
+            if broken_cnt >= 3 {
+                continue;
+            }
+
             let pos = &Pos::new(ny, nx);
             let mut power = if let Some((tough, _)) = self.estimated_toughness[pos.y][pos.x] {
                 tough
