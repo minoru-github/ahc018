@@ -30,7 +30,8 @@ def parse_from_stderr(stderr: str):
     cnt = int(out[0])
     score = int(out[1])
     duration = float(out[2])
-    return cnt, score, duration
+    cost = int(out[3])
+    return cnt, score, duration, cost
 
 
 data_path = "./in/"
@@ -43,8 +44,8 @@ def run_ahc_exe(filename: pathlib.Path):
     with open(path) as text:
         proc = subprocess.run(cmd, shell=True, stdin=text,
                               stdout=PIPE, stderr=PIPE, text=True, encoding="Shift-JIS")
-        cnt, score, duration = parse_from_stderr(proc.stderr)
-    return filename.name, cnt, score, duration
+        cnt, score, duration, cost = parse_from_stderr(proc.stderr)
+    return filename.name, cnt, score, duration, cost
 
 
 def run_multi():
@@ -60,19 +61,21 @@ def run_multi():
 def output_result(result_list):
     total_score = 0
     total_cnt = 0
-    print("file;  total_score;       score;   cnt; tot_cnt; time")
+    #print("file;  total_score;       score;  cost;  time")
+    print("file;  total_score;       score;  time")
     for i, result in enumerate(result_list):
-        filename, cnt, score, duration = result
+        filename, cnt, score, duration, cost = result
         total_score += score
         total_cnt += cnt
         check_point_col = set_color_to_check_point(i)
         score_col = set_color_to_score(score)
         print("{};".format(filename[:4])
               + "{}{:13d}{};".format(check_point_col, total_score, Color.RESET)
-                + "{}{:12d}{};".format(score_col, score, Color.RESET)
-                + "{:6d};".format(cnt)
-                + "{}{:8d}{};" .format(check_point_col, total_cnt, Color.RESET)
-                + "{:.3f}".format(duration))
+              + "{}{:12d}{};".format(score_col, score, Color.RESET)
+              #+ "{:6d};".format(cost)
+                # + "{:6d};".format(cnt)
+                # + "{}{:8d}{};" .format(check_point_col, total_cnt, Color.RESET)
+                + " {:.3f}".format(duration))
     print("total; {}".format(total_score))
 
 
