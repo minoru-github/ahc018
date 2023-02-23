@@ -127,7 +127,7 @@ impl Field {
                         self.estimate_around(pos, power, total_power, is_broken);
                     }
 
-                    self.excavate_around(pos, 8, Field::MAX_POWER);
+                    self.excavate_around(pos, 0, 8, Field::MAX_POWER);
                 }
             }
         }
@@ -226,7 +226,7 @@ impl Field {
         }
     }
 
-    fn excavate_around(&mut self, pos: &Pos, around_size: usize, max_power: usize) {
+    fn excavate_around(&mut self, pos: &Pos, begine: usize, end: usize, max_power: usize) {
         let dy = vec![
             10, -10, 0, 0, 15, 15, -15, -15, 25, -25, 0, 0, 30, 30, -30, -30,
         ];
@@ -234,7 +234,7 @@ impl Field {
             0, 0, 10, -10, 15, -15, 15, -15, 0, 0, 25, -25, 30, -30, 30, -30,
         ];
 
-        for i in 0..around_size {
+        for i in begine..end {
             let ny = pos.y as i32 + dy[i];
             let nx = pos.x as i32 + dx[i];
             if is_out_range(ny) || is_out_range(nx) {
@@ -283,7 +283,7 @@ impl Field {
             }
             self.excavate_completely(pos, Field::INITIAL_POWER / 2);
 
-            self.excavate_around(pos, 16, Field::MAX_POWER);
+            self.excavate_around(pos, 0, 16, Field::MAX_POWER);
         }
     }
 
@@ -294,7 +294,7 @@ impl Field {
             }
             self.excavate_completely(pos, Field::INITIAL_POWER / 2);
 
-            self.excavate_around(pos, 16, Field::MAX_POWER);
+            self.excavate_around(pos, 0, 16, Field::MAX_POWER);
         }
     }
 
