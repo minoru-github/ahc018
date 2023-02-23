@@ -537,6 +537,36 @@ impl Field {
 
         for &(_, house) in sorted_house_vec.iter() {
             let path = self.search_path_to_water(house, &water_set);
+
+            let mut path_corner = vec![];
+            for i in 0..(path.len() - 2) {
+                let current = path[i];
+                let after2 = path[i + 2];
+                let dy = (current.y as i32 - after2.y as i32).abs();
+                let dx = (current.x as i32 - after2.x as i32).abs();
+                if dx != 0 && dy != 0 {
+                    path_corner.push(path[i + 1]);
+                }
+            }
+
+            for pos in path_corner.iter() {
+                if self.is_broken[pos.y][pos.x] {
+                    continue;
+                }
+                let initial_power = if let Some((tough, _)) = self.estimated_toughness[pos.y][pos.x]
+                {
+                    tough
+                } else {
+                    Field::INITIAL_POWER/2
+                };
+                println!(
+                    "# corner pos ({}, {}), est {:?}",
+                    pos.y, pos.x, self.estimated_toughness[pos.y][pos.x]
+                );
+                self.excavate_completely(pos, initial_power);
+            }
+            let path = self.search_path_to_water(house, &water_set);
+
             for pos in path {
                 water_set.insert((pos.y, pos.x));
                 if !IS_LOCAL_ESTIMATING_FIELD_MODE {
