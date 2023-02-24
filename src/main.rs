@@ -489,13 +489,15 @@ impl Field {
             let path = self.search_path_to_water(house, &water_set);
 
             let mut path_corner = vec![];
-            for i in 0..(path.len() - 2) {
-                let current = path[i];
-                let after2 = path[i + 2];
-                let dy = (current.y as i32 - after2.y as i32).abs();
-                let dx = (current.x as i32 - after2.x as i32).abs();
-                if dx != 0 && dy != 0 {
-                    path_corner.push(path[i + 1]);
+            if path.len() >= 2 {
+                for i in 0..(path.len() - 2) {
+                    let current = path[i];
+                    let after2 = path[i + 2];
+                    let dy = (current.y as i32 - after2.y as i32).abs();
+                    let dx = (current.x as i32 - after2.x as i32).abs();
+                    if dx != 0 && dy != 0 {
+                        path_corner.push(path[i + 1]);
+                    }
                 }
             }
 
@@ -507,7 +509,11 @@ impl Field {
                 {
                     tough
                 } else {
-                    if self.c >= 64 {
+                    if self.c == 128 {
+                        Field::INITIAL_POWER * 7
+                    } else if self.c == 64 {
+                        Field::INITIAL_POWER * 3
+                    } else if self.c == 32 {
                         Field::INITIAL_POWER / 2
                     } else {
                         Field::INITIAL_POWER / 3
@@ -530,7 +536,11 @@ impl Field {
                 {
                     tough - self.damage[pos.y][pos.x] / 5
                 } else {
-                    if self.c >= 64 {
+                    if self.c == 128 {
+                        Field::INITIAL_POWER * 5
+                    } else if self.c == 64 {
+                        Field::INITIAL_POWER * 3
+                    } else if self.c == 32 {
                         Field::INITIAL_POWER / 2
                     } else {
                         Field::INITIAL_POWER / 3
@@ -602,7 +612,7 @@ impl Field {
         let mut parent: Vec<Vec<Option<Pos>>> = vec![vec![None; self.n]; self.n];
 
         let mut heap: BinaryHeap<(i32, (usize, usize))> = BinaryHeap::new();
-        heap.push((0, (house.y, house.x)));
+        heap.push((-(self.c as i32), (house.y, house.x)));
 
         while let Some((d, (y, x))) = heap.pop() {
             let d = (-d) as usize;
@@ -626,8 +636,8 @@ impl Field {
                     5000
                 };
 
-                if dist[ny][nx] > d + tough {
-                    dist[ny][nx] = d + tough;
+                if dist[ny][nx] > d + tough + self.c {
+                    dist[ny][nx] = d + tough + self.c;
                     heap.push((-1 * dist[ny][nx] as i32, (ny, nx)));
                     parent[ny][nx] = Some(Pos::new(y, x));
                 }
