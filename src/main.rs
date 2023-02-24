@@ -21,7 +21,7 @@ use std::{
 };
 
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = false | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -304,16 +304,9 @@ impl Field {
             if self.is_broken[pos.y][pos.x] {
                 continue;
             }
-            if source_vec.len() == 1 {
-                self.excavate_around(pos, 0, 16, Field::MAX_POWER);
-            } else if source_vec.len() == 2 {
-                self.excavate_completely(pos, Field::INITIAL_POWER / 2);
-                self.excavate_around(pos, 0, 16, Field::MAX_POWER + 100);
-            } else if source_vec.len() == 3 {
-                self.excavate_around(pos, 0, 8, Field::MAX_POWER / 2);
-            } else {
-                self.excavate_around(pos, 0, 4, Field::MAX_POWER / 2);
-            }
+            self.excavate_completely(pos, Field::INITIAL_POWER / 2);
+
+            self.excavate_around(pos, 0, 16, Field::MAX_POWER);
         }
     }
 
@@ -687,6 +680,26 @@ impl Field {
 
         (dist, parent)
     }
+
+    fn research_for_debug(&mut self) {
+        for y in 0..self.n {
+            for x in 0..self.n {
+                let power = 400;
+                let pos = &Pos::new(y, x);
+                let responce = self.excavate(pos, power);
+                // match responce {
+                //     Response::Broken => {
+                //         // 壊れたら周りを推定
+                //         self.estimate_around(pos, power, power, true);
+
+                //         self.estimated_toughness[y][x] = Some((0, 1.0));
+                //         self.est_tough_cands[y][x].clear();
+                //     }
+                //     _ => {}
+                // }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -708,6 +721,8 @@ impl Sim {
             self.input.source_vec.clone(),
         );
 
+        //field.research_for_debug();
+        //return;
         // 地形の推定フェーズ
         field.excavate_sources(&self.input.source_vec);
         field.excavate_houses(&self.input.house_vec);
