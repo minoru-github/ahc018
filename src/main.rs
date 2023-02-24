@@ -21,7 +21,7 @@ use std::{
 };
 
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = false | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -114,7 +114,7 @@ impl Field {
         }
     }
 
-    fn excavate_with_estimate(&mut self, pos: &Pos, power:usize) -> Response {
+    fn excavate_with_estimate(&mut self, pos: &Pos, power: usize) -> Response {
         let mut total_power = power;
         let mut is_broken = false;
         let mut responce = Response::Invalid;
