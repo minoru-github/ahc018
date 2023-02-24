@@ -58,6 +58,7 @@ struct Field {
     total_cost: usize,
     estimated_toughness: Vec<Vec<Option<(usize, f64)>>>,
     est_tough_cands: Vec<Vec<Vec<(usize, f64)>>>,
+    damage: Vec<Vec<usize>>,
     connections: Dsu,
     house_vec: Vec<Pos>,
     source_vec: Vec<Pos>,
@@ -69,6 +70,7 @@ impl Field {
         let is_broken = vec![vec![false; n]; n];
         let estimated_toughness = vec![vec![None; n]; n];
         let est_tough_cands = vec![vec![vec![]; n]; n];
+        let damage = vec![vec![0; n]; n];
         let connections = Dsu::new(n * n);
 
         Field {
@@ -78,6 +80,7 @@ impl Field {
             total_cost: 0,
             estimated_toughness,
             est_tough_cands,
+            damage,
             connections,
             house_vec,
             source_vec,
@@ -111,6 +114,18 @@ impl Field {
                     self.excavate_around(pos, 0, 8, Field::MAX_POWER);
                 }
             }
+        }
+    }
+
+    fn compute_path_toughness(&self, path: &Vec<Pos>) {
+        let mut tough_vec = vec![];
+        for pos in path {
+            let tough = if let Some((tough, prob)) = self.estimated_toughness[pos.y][pos.x] {
+                tough
+            } else {
+                5000 - self.damage[pos.y][pos.x]
+            };
+            tough_vec.push(tough);
         }
     }
 
@@ -148,6 +163,7 @@ impl Field {
             // );
             return Response::Skip;
         }
+        self.damage[pos.y][pos.x] += power;
         self.total_cost += power + self.c;
         if !IS_LOCAL_ESTIMATING_FIELD_MODE {
             println!("{} {} {}", pos.y, pos.x, power);
@@ -275,7 +291,7 @@ impl Field {
 
             let pos = &Pos::new(ny, nx);
             let mut power = if let Some((tough, _)) = self.estimated_toughness[pos.y][pos.x] {
-                tough
+                (tough + self.damage[pos.y][pos.x]) / 2
             } else {
                 Field::INITIAL_POWER
             };
@@ -310,8 +326,8 @@ impl Field {
         let mut power = initial_power;
         let mut total_power = 0;
         loop {
-            if total_power + power >= 5000 {
-                power = 5000 - total_power;
+            if self.damage[pos.y][pos.x] + power >= 5000 {
+                power = 5000 - self.damage[pos.y][pos.x];
             }
             total_power += power;
             let responce = self.excavate(pos, power);
@@ -421,7 +437,7 @@ impl Field {
     fn estimate_around(&mut self, pos: &Pos, power: usize, total_power: usize, is_broken: bool) {
         let (tough, est_width) = if is_broken {
             // 強めに壊してる分を補正
-            (total_power - power / 2, 11)
+            (self.damage[pos.y][pos.x] - power / 2, 11)
         } else {
             (5000, 5)
         };
@@ -541,7 +557,11 @@ impl Field {
                 {
                     tough
                 } else {
-                    Field::INITIAL_POWER / 2
+                    if self.c >= 64 {
+                        Field::INITIAL_POWER / 2
+                    } else {
+                        Field::INITIAL_POWER / 3
+                    }
                 };
                 println!(
                     "# corner pos ({}, {}), est {:?}",
@@ -559,9 +579,13 @@ impl Field {
                     }
                     let initial_power =
                         if let Some((tough, _)) = self.estimated_toughness[pos.y][pos.x] {
-                            tough
+                            tough - self.damage[pos.y][pos.x]/5
                         } else {
-                            Field::INITIAL_POWER
+                            if self.c >= 64 {
+                                Field::INITIAL_POWER / 2
+                            } else {
+                                Field::INITIAL_POWER / 3
+                            }
                         };
                     println!(
                         "# pos ({}, {}), est {:?}",
