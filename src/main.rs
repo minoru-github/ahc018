@@ -20,8 +20,7 @@ use std::{
     slice::SliceIndex,
 };
 
-const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = true;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -99,20 +98,18 @@ impl Field {
         for house in sorted_house_vec {
             let path = self.search_path_to_water(&house, &water_set);
             for (cnt, pos) in path.iter().enumerate() {
-                if !IS_LOCAL_ESTIMATING_FIELD_MODE {
-                    water_set.insert((pos.y, pos.x));
-                    if self.is_broken[pos.y][pos.x] {
-                        continue;
-                    }
-
-                    if cnt % 50 != 0 {
-                        continue;
-                    }
-
-                    self.excavate_with_estimate(pos, Field::INITIAL_POWER);
-
-                    self.excavate_around(pos, 0, 8, Field::MAX_POWER);
+                water_set.insert((pos.y, pos.x));
+                if self.is_broken[pos.y][pos.x] {
+                    continue;
                 }
+
+                if cnt % 50 != 0 {
+                    continue;
+                }
+
+                self.excavate_with_estimate(pos, Field::INITIAL_POWER);
+
+                self.excavate_around(pos, 0, 8, Field::MAX_POWER);
             }
         }
     }
@@ -165,9 +162,7 @@ impl Field {
         }
         self.damage[pos.y][pos.x] += power;
         self.total_cost += power + self.c;
-        if !IS_LOCAL_ESTIMATING_FIELD_MODE {
-            println!("{} {} {}", pos.y, pos.x, power);
-        }
+        println!("{} {} {}", pos.y, pos.x, power);
 
         if IS_LOCAL {
             unsafe {
@@ -347,53 +342,8 @@ impl Field {
         }
     }
 
-    const EST_BLOCK_UNIT: usize = 5;
-    const EST_BLOCK_CENTER: usize = Field::EST_BLOCK_UNIT * 3;
-    const EST_BLOCK_WIDTH: usize = Field::EST_BLOCK_CENTER * 2 - Field::EST_BLOCK_UNIT;
-    const EST_BLOCK_AROUND_WIDTH: usize = Field::EST_BLOCK_CENTER * 4 - Field::EST_BLOCK_UNIT;
-    const EST_BLOCK_RADIUS: usize = Field::EST_BLOCK_CENTER * 2 - Field::EST_BLOCK_UNIT;
     const INITIAL_POWER: usize = 100;
     const MAX_POWER: usize = 300;
-    fn estimate_representative_points_around(&mut self) {
-        let mut power = Field::INITIAL_POWER;
-
-        let mut total_power = 0;
-        let mut points_not_broken = BTreeSet::new();
-        while total_power <= Field::MAX_POWER {
-            for q in 0..(Field::WIDTH / Field::EST_BLOCK_WIDTH) {
-                let y = Field::EST_BLOCK_WIDTH * q + Field::EST_BLOCK_CENTER;
-                for p in 0..(Field::WIDTH / Field::EST_BLOCK_WIDTH) {
-                    let x = Field::EST_BLOCK_WIDTH * p + Field::EST_BLOCK_CENTER;
-                    if self.is_broken[y][x] {
-                        continue;
-                    }
-                    points_not_broken.insert((y, x));
-
-                    let pos = &Pos::new(y, x);
-
-                    // 掘削
-                    let responce = self.excavate(pos, power);
-                    match responce {
-                        Response::Broken => {
-                            // 壊れたら周りを推定
-                            self.estimate_around(pos, power, total_power, true);
-                            points_not_broken.remove(&(y, x));
-
-                            self.estimated_toughness[y][x] = Some((0, 1.0));
-                            self.est_tough_cands[y][x].clear();
-                            break;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            total_power += power;
-        }
-
-        points_not_broken.iter().for_each(|&(y, x)| {
-            self.estimate_around(&Pos::new(y, x), power, 5000, false);
-        });
-    }
 
     fn compute_weighted_average(&mut self, y: usize, x: usize) {
         if let Some((tough, _)) = self.estimated_toughness[y][x] {
@@ -573,26 +523,24 @@ impl Field {
 
             for pos in path {
                 water_set.insert((pos.y, pos.x));
-                if !IS_LOCAL_ESTIMATING_FIELD_MODE {
-                    if self.is_broken[pos.y][pos.x] {
-                        continue;
-                    }
-                    let initial_power =
-                        if let Some((tough, _)) = self.estimated_toughness[pos.y][pos.x] {
-                            tough - self.damage[pos.y][pos.x]/5
-                        } else {
-                            if self.c >= 64 {
-                                Field::INITIAL_POWER / 2
-                            } else {
-                                Field::INITIAL_POWER / 3
-                            }
-                        };
-                    println!(
-                        "# pos ({}, {}), est {:?}",
-                        pos.y, pos.x, self.estimated_toughness[pos.y][pos.x]
-                    );
-                    self.excavate_completely(&pos, initial_power);
+                if self.is_broken[pos.y][pos.x] {
+                    continue;
                 }
+                let initial_power = if let Some((tough, _)) = self.estimated_toughness[pos.y][pos.x]
+                {
+                    tough - self.damage[pos.y][pos.x] / 5
+                } else {
+                    if self.c >= 64 {
+                        Field::INITIAL_POWER / 2
+                    } else {
+                        Field::INITIAL_POWER / 3
+                    }
+                };
+                println!(
+                    "# pos ({}, {}), est {:?}",
+                    pos.y, pos.x, self.estimated_toughness[pos.y][pos.x]
+                );
+                self.excavate_completely(&pos, initial_power);
             }
         }
     }
@@ -736,9 +684,6 @@ impl Sim {
         field.excavate_houses(&self.input.house_vec);
         //field.estimate_representative_points_around();
         field.estimate_between_important_points();
-        if IS_LOCAL_ESTIMATING_FIELD_MODE {
-            field.output_estimated_toughness();
-        }
 
         // 水路を作るフェーズ
         field.connect_water_path(&self.input.source_vec, &self.input.house_vec);
