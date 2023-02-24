@@ -21,7 +21,7 @@ use std::{
 };
 
 const IS_LOCAL_ESTIMATING_FIELD_MODE: bool = false;
-const IS_LOCAL: bool = true | IS_LOCAL_ESTIMATING_FIELD_MODE;
+const IS_LOCAL: bool = false | IS_LOCAL_ESTIMATING_FIELD_MODE;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -56,8 +56,8 @@ struct Field {
     c: usize,
     is_broken: Vec<Vec<bool>>,
     total_cost: usize,
-    estimated_toughness: Vec<Vec<Option<(usize, f32)>>>,
-    est_tough_cands: Vec<Vec<Vec<(usize, f32)>>>,
+    estimated_toughness: Vec<Vec<Option<(usize, f64)>>>,
+    est_tough_cands: Vec<Vec<Vec<(usize, f64)>>>,
     connections: Dsu,
     house_vec: Vec<Pos>,
     source_vec: Vec<Pos>,
@@ -253,7 +253,7 @@ impl Field {
                 continue;
             }
 
-            let range = 7;
+            let range = 8;
             let mut broken_cnt = 0;
             for q in -range..range {
                 for p in -range..range {
@@ -395,7 +395,7 @@ impl Field {
             let mut total_prob = 0.0;
             self.est_tough_cands[y][x].iter().for_each(|(tough, prob)| {
                 total_w += *prob;
-                total += prob * (*tough as f32);
+                total += prob * (*tough as f64);
                 if *prob > max_prob {
                     max_prob = *prob;
                 }
@@ -425,7 +425,7 @@ impl Field {
         } else {
             (5000, 5)
         };
-        let tough = tough.min(5000).max(20);
+        let tough = tough.min(5000).max(30);
         let est_center = est_width / 2;
         let est_radius = est_width / 2;
         let check_range = |val: usize, cnt: usize| {
@@ -458,11 +458,11 @@ impl Field {
 
                 let dx = (i as i32 - est_center as i32).abs();
                 let dy = (j as i32 - est_center as i32).abs();
-                let dist = (dx + dy) as f32;
-                let max_dist = (est_radius * 2) as f32;
+                let dist = (dx + dy) as f64;
+                let max_dist = (est_radius * est_radius) as f64;
                 let prob = (max_dist * max_dist) / (dist * dist + max_dist * max_dist).max(1.0);
                 //let est_tough = (tough, sigmoid(prob as f64) as f32);
-                let prob = (prob as f64).powf(45.0) as f32;
+                let prob = (prob as f64).powf(45.0) as f64;
                 let est_tough = (tough, prob);
 
                 self.est_tough_cands[y][x].push(est_tough);
