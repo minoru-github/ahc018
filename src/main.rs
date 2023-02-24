@@ -106,33 +106,38 @@ impl Field {
                         continue;
                     }
 
-                    let mut power = Field::INITIAL_POWER;
-                    let mut total_power = power;
-                    let mut is_broken = false;
-                    while total_power <= Field::MAX_POWER {
-                        let responce = self.excavate(pos, power);
-                        match responce {
-                            Response::Broken => {
-                                // 壊れたら周りを推定
-                                is_broken = true;
-                                self.estimate_around(pos, power, total_power, is_broken);
-
-                                self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
-                                self.est_tough_cands[pos.y][pos.x].clear();
-                                break;
-                            }
-                            _ => {}
-                        };
-                        total_power += power;
-                    }
-                    if !is_broken {
-                        self.estimate_around(pos, power, total_power, is_broken);
-                    }
+                    self.excavate_with_estimate(pos, Field::INITIAL_POWER);
 
                     self.excavate_around(pos, 0, 8, Field::MAX_POWER);
                 }
             }
         }
+    }
+
+    fn excavate_with_estimate(&mut self, pos: &Pos, power:usize) -> Response {
+        let mut total_power = power;
+        let mut is_broken = false;
+        let mut responce = Response::Invalid;
+        while total_power <= Field::MAX_POWER {
+            responce = self.excavate(pos, power);
+            match responce {
+                Response::Broken => {
+                    // 壊れたら周りを推定
+                    is_broken = true;
+                    self.estimate_around(pos, power, total_power, is_broken);
+
+                    self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
+                    self.est_tough_cands[pos.y][pos.x].clear();
+                    break;
+                }
+                _ => {}
+            };
+            total_power += power;
+        }
+        if !is_broken {
+            self.estimate_around(pos, power, total_power, is_broken);
+        }
+        responce
     }
 
     fn excavate(&mut self, pos: &Pos, power: usize) -> Response {
@@ -264,7 +269,7 @@ impl Field {
                 }
             }
 
-            if broken_cnt >= 3 {
+            if broken_cnt >= 2 {
                 continue;
             }
 
@@ -274,28 +279,7 @@ impl Field {
             } else {
                 Field::INITIAL_POWER
             };
-            let mut total_power = power;
-            let mut is_broken = false;
-
-            while total_power <= max_power {
-                let responce = self.excavate(pos, power);
-                match responce {
-                    Response::Broken => {
-                        // 壊れたら周りを推定
-                        is_broken = true;
-                        self.estimate_around(pos, power, total_power, is_broken);
-
-                        self.estimated_toughness[pos.y][pos.x] = Some((0, 1.0));
-                        self.est_tough_cands[pos.y][pos.x].clear();
-                        break;
-                    }
-                    _ => {}
-                };
-                total_power += power;
-            }
-            if !is_broken {
-                self.estimate_around(pos, power, total_power, is_broken);
-            }
+            self.excavate_with_estimate(pos, power);
         }
     }
 
