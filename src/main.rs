@@ -1,5 +1,5 @@
 #![allow(unused)]
-use itertools::Itertools;
+use itertools::{Itertools, Powerset};
 use my_lib::*;
 use num::{traits::Pow, Integer};
 use num_integer::Roots;
@@ -710,6 +710,169 @@ impl Field {
         (dist, parent)
     }
 
+    fn a_star(&mut self, house: &Pos, water_set: &BTreeSet<(usize, usize)>) {
+        let step = 5;
+        let limit_goal = 10;
+        let cost = 5;
+        let power = 100;
+        let limit_power = 200;
+
+        let dy = vec![step, -step, 0, 0];
+        let dx = vec![0, 0, step, -step];
+
+        let mut f_map = vec![vec![i32::max_value(); self.n]; self.n];
+        let mut g_map = vec![vec![i32::max_value(); self.n]; self.n];
+
+        let mut parent: Vec<Vec<Option<Pos>>> = vec![vec![None; self.n]; self.n];
+        let mut heap: BinaryHeap<(i32, i32, (usize, usize))> = BinaryHeap::new();
+        heap.push((0, 0, (house.y, house.x)));
+
+        let mut total_power = 0;
+        loop {
+            if self.is_broken[house.y][house.x] {
+                break;
+            }
+            let response = self.excavate(house, power);
+            match response {
+                Response::Broken => {
+                    self.is_broken[house.y][house.x] = true;
+                    self.estimated_toughness[house.y][house.x] = Some((0, 1.0));
+                    self.estimate_around(&Pos::new(house.y, house.x), power, total_power, true);
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        while let Some((f, g, (y, x))) = heap.pop() {
+            //println!("# current {} {} ({}, {})", f, g, y, x);
+            //println!("# {:?}", heap);
+
+            let f = (-f);
+            if f_map[y][x] < f {
+                continue;
+            }
+            f_map[y][x] = f;
+            g_map[y][x] = g;
+
+            for i in 0..4 {
+                let ny = y as i32 + dy[i];
+                let nx = x as i32 + dx[i];
+                if is_out_range(ny) || is_out_range(nx) {
+                    continue;
+                }
+                let ny = ny as usize;
+                let nx = nx as usize;
+
+                let ch_pos = &Pos::new(ny, nx);
+                let dist = self.compute_dist_for_a_star(water_set, ch_pos);
+
+                if dist < limit_goal {
+                    return;
+                }
+
+                if self.is_broken[ny][nx] {
+                    continue;
+                }
+
+                let mut total_cost = 0;
+                let mut total_power = 0;
+                loop {
+                    total_cost += power + self.c;
+                    total_power += power;
+                    let response = self.excavate(ch_pos, power);
+                    match response {
+                        Response::Broken => {
+                            self.is_broken[ny][nx] = true;
+                            self.estimated_toughness[ny][nx] = Some((0, 1.0));
+                            self.estimate_around(ch_pos, power, total_power, true);
+                            break;
+                        }
+                        _ => {}
+                    }
+                    if total_power >= limit_power {
+                        total_power = 5000;
+                        break;
+                    }
+                }
+
+                let c_g = g_map[y][x] + total_cost as i32;
+                let c_h = cost * self.compute_dist_for_a_star(water_set, ch_pos);
+                let c_f = c_g + c_h;
+
+                if f_map[ny][nx] > c_f {
+                    f_map[ny][nx] = c_f;
+                    g_map[ny][nx] = c_g;
+
+                    let child = (-1 * c_f, c_g, (ny, nx));
+                    //println!("# current {} {} ({}, {})", -f, g, y, x);
+                    //println!("# child {:?} {} ", child, c_h);
+                    heap.push(child);
+                    parent[ny][nx] = Some(Pos::new(y, x));
+                }
+            }
+        }
+    }
+
+    fn compute_dist_for_a_star(&self, water_set: &BTreeSet<(usize, usize)>, house: &Pos) -> i32 {
+        let mut min_manhattan_dist = i32::max_value();
+        for source in water_set.iter() {
+            let dx = (source.1 as i32 - house.x as i32).abs();
+            let dy = (source.0 as i32 - house.y as i32).abs();
+            let dist = (dx + dy);
+            min_manhattan_dist = min_manhattan_dist.min(dist);
+        }
+        min_manhattan_dist
+    }
+
+    fn connect_water_path_with_a_star(&mut self, source_vec: &Vec<Pos>, house_vec: &Vec<Pos>) {
+        // 水路を含め、水があるところ
+        let mut water_set = BTreeSet::new();
+        source_vec.iter().for_each(|pos| {
+            water_set.insert((pos.y, pos.x));
+        });
+
+        //let sorted_house_vec = self.sort_houses_by_manhattan_dist(source_vec, house_vec);
+        let mut sorted_house_vec = vec![];
+
+        for house in house_vec.iter() {
+            let path_cost = self.compute_dist_for_a_star(&water_set, house);
+            sorted_house_vec.push((path_cost, house));
+        }
+        sorted_house_vec.sort();
+
+        for &(_, house) in sorted_house_vec.iter() {
+            self.a_star(house, &water_set);
+            let path = self.search_path_to_water(house, &water_set);
+
+            for pos in path {
+                water_set.insert((pos.y, pos.x));
+                if self.is_broken[pos.y][pos.x] {
+                    continue;
+                }
+                let initial_power = if let Some((tough, _)) = self.estimated_toughness[pos.y][pos.x]
+                {
+                    tough - self.damage[pos.y][pos.x] / 5
+                } else {
+                    if self.c == 128 {
+                        Field::INITIAL_POWER * 5
+                    } else if self.c == 64 {
+                        Field::INITIAL_POWER * 3
+                    } else if self.c == 32 {
+                        Field::INITIAL_POWER / 2
+                    } else {
+                        Field::INITIAL_POWER / 3
+                    }
+                };
+                println!(
+                    "# pos ({}, {}), est {:?}",
+                    pos.y, pos.x, self.estimated_toughness[pos.y][pos.x]
+                );
+                self.excavate_completely(&pos, initial_power);
+            }
+        }
+    }
+
     fn research_for_debug(&mut self) {
         for y in 0..self.n {
             for x in 0..self.n {
@@ -749,6 +912,18 @@ impl Sim {
             self.input.house_vec.clone(),
             self.input.source_vec.clone(),
         );
+
+        let mut water_set = BTreeSet::new();
+        for &source in self.input.source_vec.iter() {
+            water_set.insert((source.y, source.x));
+        }
+
+        // for house in self.input.house_vec.iter().rev() {
+        //     field.a_star(house, &water_set);
+        // }
+
+        field.connect_water_path_with_a_star(&self.input.source_vec, &self.input.house_vec);
+        return;
 
         //field.research_for_debug();
         //return;
