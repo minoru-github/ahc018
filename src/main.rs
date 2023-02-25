@@ -1,7 +1,8 @@
 #![allow(unused)]
 use itertools::Itertools;
 use my_lib::*;
-use num::traits::Pow;
+use num::{traits::Pow, Integer};
+use num_integer::Roots;
 use procon_input::*;
 use rand::prelude::*;
 use rand_pcg::Mcg128Xsl64;
@@ -20,6 +21,11 @@ use std::{
     slice::SliceIndex,
 };
 
+// おそらく最終提出
+// マンハッタン距離上をいくつか穴開けて、その周辺の岩の固さを推定。
+// マンハッタン距離が水源(水路含む)に近いものから繋げていく。
+// A*的なアルゴで固い岩を避けるってのも試したかった
+
 const IS_LOCAL: bool = true;
 
 static mut START_TIME: f64 = 0.0;
@@ -34,10 +40,6 @@ fn main() {
     }
 
     Sim::new().run();
-
-    // let end_time = my_lib::time::update();
-    // let duration = end_time - start_time;
-    // eprintln!("{:?} ", duration);
 }
 
 #[derive(Debug, Clone)]
@@ -65,6 +67,9 @@ struct Field {
 
 impl Field {
     const WIDTH: usize = 200;
+    const INITIAL_POWER: usize = 100;
+    const MAX_POWER: usize = Field::INITIAL_POWER * 3;
+
     fn new(n: usize, c: usize, house_vec: Vec<Pos>, source_vec: Vec<Pos>) -> Self {
         let is_broken = vec![vec![false; n]; n];
         let estimated_toughness = vec![vec![None; n]; n];
@@ -111,18 +116,6 @@ impl Field {
 
                 self.excavate_around(pos, 0, 8, Field::MAX_POWER);
             }
-        }
-    }
-
-    fn compute_path_toughness(&self, path: &Vec<Pos>) {
-        let mut tough_vec = vec![];
-        for pos in path {
-            let tough = if let Some((tough, prob)) = self.estimated_toughness[pos.y][pos.x] {
-                tough
-            } else {
-                5000 - self.damage[pos.y][pos.x]
-            };
-            tough_vec.push(tough);
         }
     }
 
@@ -245,11 +238,18 @@ impl Field {
     }
 
     fn excavate_around(&mut self, pos: &Pos, begine: usize, end: usize, max_power: usize) {
+        let val1 = 10;
+        let val2 = 15;
+        let val3 = 25;
+        let val4 = 30;
+
         let dy = vec![
-            10, -10, 0, 0, 15, 15, -15, -15, 25, -25, 0, 0, 30, 30, -30, -30,
+            val1, -val1, 0, 0, val2, val2, -val2, -val2, val3, -val3, 0, 0, val4, val4, -val4,
+            -val4,
         ];
         let dx = vec![
-            0, 0, 10, -10, 15, -15, 15, -15, 0, 0, 25, -25, 30, -30, 30, -30,
+            0, 0, val1, -val1, val2, -val2, val2, -val2, 0, 0, val3, -val3, val4, -val4, val4,
+            -val4,
         ];
 
         for i in begine..end {
@@ -341,9 +341,6 @@ impl Field {
             power = Field::INITIAL_POWER;
         }
     }
-
-    const INITIAL_POWER: usize = 100;
-    const MAX_POWER: usize = 300;
 
     fn compute_weighted_average(&mut self, y: usize, x: usize) {
         if let Some((tough, _)) = self.estimated_toughness[y][x] {
@@ -465,6 +462,72 @@ impl Field {
             min_manhattan_dist = min_manhattan_dist.min(dist);
         }
         min_manhattan_dist
+    }
+
+    fn excavate_around_hard_block(&mut self, path_tough_vec: &Vec<(Pos, usize)>) {
+        //
+        print!("# tough: ");
+        let mut vec = vec![];
+        let mut first = None;
+        let mut cnt = 0;
+
+        for &(pos, tough) in path_tough_vec {
+            print!("{:?} ", tough);
+            if tough >= 5000 {
+                first = Some(pos);
+                cnt += 1;
+                if cnt >= 22 {
+                    let last = pos;
+                    let y = (first.unwrap().y + last.y) / 2;
+                    let x = (first.unwrap().x + last.x) / 2;
+                    vec.push((Pos::new(y, x), cnt));
+                    first = None;
+                    cnt = 0;
+                }
+            }
+        }
+        println!("");
+        println!("# {:?}", vec);
+        for &(pos, cnt) in vec.iter() {
+            let cnt = (cnt);
+            for q in -cnt..cnt {
+                for p in -cnt..cnt {
+                    if p % 4 != 0 || q % 4 != 0 {
+                        continue;
+                    }
+                    let dist = (p * p + q * q).sqrt();
+                    if dist != cnt {
+                        continue;
+                    }
+                    let y = pos.y as i32 + q;
+                    let x = pos.x as i32 + p;
+                    if is_out_range(y) || is_out_range(x) {
+                        continue;
+                    }
+                    let y = y as usize;
+                    let x = x as usize;
+                    let pos = &Pos::new(y, x);
+                    let mut broken_cnt = 0;
+                    for q in -7..7 {
+                        for p in -7..7 {
+                            let y = pos.y as i32 + q;
+                            let x = pos.x as i32 + p;
+                            if is_out_range(y) || is_out_range(x) {
+                                continue;
+                            }
+                            let y = y as usize;
+                            let x = x as usize;
+                            if self.is_broken[y][x] {
+                                broken_cnt += 1;
+                            }
+                        }
+                    }
+                    if broken_cnt < 4 {
+                        self.excavate_with_estimate(pos, 200);
+                    }
+                }
+            }
+        }
     }
 
     fn connect_water_path(&mut self, source_vec: &Vec<Pos>, house_vec: &Vec<Pos>) {
