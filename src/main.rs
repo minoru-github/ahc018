@@ -1,5 +1,5 @@
 #![allow(unused)]
-use itertools::{Itertools, Powerset};
+use itertools::{Itertools};
 use my_lib::*;
 use num::{traits::Pow, Integer};
 use num_integer::Roots;
@@ -21,12 +21,7 @@ use std::{
     slice::SliceIndex,
 };
 
-// おそらく最終提出
-// マンハッタン距離上をいくつか穴開けて、その周辺の岩の固さを推定。
-// マンハッタン距離が水源(水路含む)に近いものから繋げていく。
-// A*的なアルゴで固い岩を避けるってのも試したかった
-
-const IS_LOCAL: bool = true;
+const IS_LOCAL: bool = false;
 
 static mut START_TIME: f64 = 0.0;
 static mut TOUGHNESS: Vec<Vec<usize>> = Vec::new();
@@ -710,28 +705,32 @@ impl Field {
         (dist, parent)
     }
 
-    fn a_star(&mut self, house: &Pos, water_set: &BTreeSet<(usize, usize)>) {
-        let step = 5;
-        let limit_goal = 10;
-        let cost = 5;
+    fn a_star(&mut self, house: &Pos, water_set: &BTreeSet<(usize, usize)>) -> Option<Pos> {
+        let step = 11;
+        let goal_allowed = 15;
+        let mut min_dist = self.compute_dist_for_a_star(water_set, house);
+        let cost = 5000;
         let power = 100;
-        let limit_power = 200;
 
         let dy = vec![step, -step, 0, 0];
         let dx = vec![0, 0, step, -step];
 
-        let mut f_map = vec![vec![i32::max_value(); self.n]; self.n];
-        let mut g_map = vec![vec![i32::max_value(); self.n]; self.n];
+        let mut f_map = vec![vec![i64::max_value() / 2; self.n]; self.n];
+        let mut g_map = vec![vec![i64::max_value() / 2; self.n]; self.n];
 
         let mut parent: Vec<Vec<Option<Pos>>> = vec![vec![None; self.n]; self.n];
-        let mut heap: BinaryHeap<(i32, i32, (usize, usize))> = BinaryHeap::new();
+        let mut heap: BinaryHeap<(i64, i64, (usize, usize))> = BinaryHeap::new();
         heap.push((0, 0, (house.y, house.x)));
+        let mut is_closed = vec![vec![false; self.n]; self.n];
 
         let mut total_power = 0;
+        is_closed[house.y][house.x] = true;
         loop {
             if self.is_broken[house.y][house.x] {
+                total_power = self.damage[house.y][house.x];
                 break;
             }
+            total_power += power;
             let response = self.excavate(house, power);
             match response {
                 Response::Broken => {
@@ -743,7 +742,9 @@ impl Field {
                 _ => {}
             }
         }
+        let limit_power = (total_power).max(600) as i64;
 
+        let mut cnt = 0;
         while let Some((f, g, (y, x))) = heap.pop() {
             //println!("# current {} {} ({}, {})", f, g, y, x);
             //println!("# {:?}", heap);
@@ -754,6 +755,11 @@ impl Field {
             }
             f_map[y][x] = f;
             g_map[y][x] = g;
+
+            // cnt += 1;
+            // if cnt >= 40 {
+            //     return Some(*house);
+            // }
 
             for i in 0..4 {
                 let ny = y as i32 + dy[i];
@@ -767,36 +773,60 @@ impl Field {
                 let ch_pos = &Pos::new(ny, nx);
                 let dist = self.compute_dist_for_a_star(water_set, ch_pos);
 
-                if dist < limit_goal {
-                    return;
+                if is_closed[ny][nx] {
+                    continue;
                 }
+                is_closed[ny][nx] = true;
 
-                if self.is_broken[ny][nx] {
+                let dist_limit = min_dist * 2;
+                if dist >= dist_limit {
+                    println!("# dist_limit {:?}", ch_pos);
                     continue;
                 }
 
                 let mut total_cost = 0;
                 let mut total_power = 0;
                 loop {
-                    total_cost += power + self.c;
-                    total_power += power;
+                    if self.is_broken[ny][nx] {
+                        total_power = self.damage[ny][nx] as i64;
+                        break;
+                    }
+                    total_cost += (power + self.c) as i64;
+                    total_power += power as i64;
+
+                    let c_g = g_map[y][x] + total_cost as i64;
+                    let c_h = cost * self.compute_dist_for_a_star(water_set, ch_pos);
+                    let c_f = c_g + c_h;
+                    // println!(
+                    //     "# {:?} {:?} {:?} {:?}, {} {}",
+                    //     ch_pos, c_f, c_g, c_h, dist, min_dist
+                    // );
+
                     let response = self.excavate(ch_pos, power);
                     match response {
                         Response::Broken => {
                             self.is_broken[ny][nx] = true;
                             self.estimated_toughness[ny][nx] = Some((0, 1.0));
-                            self.estimate_around(ch_pos, power, total_power, true);
+                            self.estimate_around(ch_pos, power, total_power as usize, true);
+
+                            min_dist = dist.min(min_dist);
+
+                            if dist < goal_allowed {
+                                return None;
+                            }
+
                             break;
                         }
                         _ => {}
                     }
                     if total_power >= limit_power {
-                        total_power = 5000;
+                        total_power = i64::max_value() / 10;
+                        total_cost = i64::max_value() / 10;
                         break;
                     }
                 }
 
-                let c_g = g_map[y][x] + total_cost as i32;
+                let c_g = g_map[y][x] + total_cost as i64;
                 let c_h = cost * self.compute_dist_for_a_star(water_set, ch_pos);
                 let c_f = c_g + c_h;
 
@@ -812,17 +842,19 @@ impl Field {
                 }
             }
         }
+
+        return Some(*house);
     }
 
-    fn compute_dist_for_a_star(&self, water_set: &BTreeSet<(usize, usize)>, house: &Pos) -> i32 {
+    fn compute_dist_for_a_star(&self, water_set: &BTreeSet<(usize, usize)>, house: &Pos) -> i64 {
         let mut min_manhattan_dist = i32::max_value();
         for source in water_set.iter() {
             let dx = (source.1 as i32 - house.x as i32).abs();
             let dy = (source.0 as i32 - house.y as i32).abs();
-            let dist = (dx + dy);
+            let dist = (dx * dx + dy * dy).sqrt();
             min_manhattan_dist = min_manhattan_dist.min(dist);
         }
-        min_manhattan_dist
+        min_manhattan_dist as i64
     }
 
     fn connect_water_path_with_a_star(&mut self, source_vec: &Vec<Pos>, house_vec: &Vec<Pos>) {
@@ -833,17 +865,30 @@ impl Field {
         });
 
         //let sorted_house_vec = self.sort_houses_by_manhattan_dist(source_vec, house_vec);
-        let mut sorted_house_vec = vec![];
+        let mut sorted_house_vec = Vec::new();
 
         for house in house_vec.iter() {
             let path_cost = self.compute_dist_for_a_star(&water_set, house);
             sorted_house_vec.push((path_cost, house));
         }
         sorted_house_vec.sort();
-
+        let mut sorted_house_q = VecDeque::new();
         for &(_, house) in sorted_house_vec.iter() {
-            self.a_star(house, &water_set);
-            let path = self.search_path_to_water(house, &water_set);
+            sorted_house_q.push_back(*house);
+        }
+
+        let mut set = BTreeSet::new();
+
+        while let Some(house) = sorted_house_q.pop_front() {
+            //for &(_, house) in sorted_house_vec.iter() {
+            if let Some(house) = self.a_star(&house, &water_set) {
+                if !set.contains(&house) {
+                    set.insert(house);
+                    sorted_house_q.push_back(house);
+                    continue;
+                }
+            }
+            let path = self.search_path_to_water(&house, &water_set);
 
             for pos in path {
                 water_set.insert((pos.y, pos.x));
